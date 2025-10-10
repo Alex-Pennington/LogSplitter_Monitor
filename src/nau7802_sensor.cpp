@@ -1,7 +1,19 @@
 #include "nau7802_sensor.h"
+#include "logger.h"
 #include <EEPROM.h>
 
 extern void debugPrintf(const char* fmt, ...);
+
+// Temporary debug function for serial output only (troubleshooting)
+static void debugSerial(const char* fmt, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    Serial.print("DEBUG: ");
+    Serial.print(buffer);
+}
 
 NAU7802Sensor::NAU7802Sensor() :
     lastError(NAU7802_OK),
@@ -26,7 +38,8 @@ NAU7802Sensor::NAU7802Sensor() :
 }
 
 NAU7802Status NAU7802Sensor::begin() {
-    debugPrintf("NAU7802: Initializing sensor...\n");
+    // Standard system logging (permanent) - goes to syslog
+    LOG_INFO("NAU7802: Initializing weight sensor");
     
     // Initialize I2C on Wire1 for Arduino R4 WiFi Qwiic connector
     Wire1.begin();
@@ -34,6 +47,7 @@ NAU7802Status NAU7802Sensor::begin() {
     // Initialize the NAU7802
     if (!scale.begin(Wire1)) {
         lastError = NAU7802_NOT_FOUND;
+        LOG_ERROR("NAU7802: Sensor not found on I2C");
         logError(lastError, "begin");
         return lastError;
     }
@@ -193,16 +207,21 @@ NAU7802Status NAU7802Sensor::calibrateZero() {
 }
 
 NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
-    debugPrintf("NAU7802: Starting scale calibration with known weight: %.2f\n", knownWeight);
+    // Standard system logging (permanent) - goes to syslog
+    LOG_INFO("NAU7802: Starting scale calibration with known weight: %.2f", knownWeight);
+    
+    // Temporary debugging (troubleshooting) - goes to serial only
+    debugSerial("NAU7802 calibrateScale() called with weight=%.2f\n", knownWeight);
     
     if (knownWeight <= 0) {
         lastError = NAU7802_CALIBRATION_FAILED;
+        LOG_ERROR("NAU7802: Invalid calibration weight: %.2f", knownWeight);
         logError(lastError, "calibrateScale - invalid weight");
         return lastError;
     }
     
     // Wait for sensor to be ready
-    debugPrintf("NAU7802: Waiting for sensor to be ready for scale calibration...\n");
+    debugSerial("Waiting for sensor to be ready for scale calibration...\n");
     unsigned long timeout = millis() + 5000;
     while (!scale.available() && millis() < timeout) {
         delay(10);
@@ -210,6 +229,7 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
     
     if (!scale.available()) {
         lastError = NAU7802_NOT_READY;
+        LOG_ERROR("NAU7802: Sensor not ready for calibration after timeout");
         logError(lastError, "calibrateScale - sensor not ready");
         return lastError;
     }
@@ -219,7 +239,7 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
     const uint8_t samples = 20;
     uint8_t validSamples = 0;
     
-    debugPrintf("NAU7802: Taking %d readings for scale calibration...\n", samples);
+    debugSerial("Taking %d readings for scale calibration...\n", samples);
     
     for (uint8_t i = 0; i < samples; i++) {
         // Wait for data to be available
@@ -232,39 +252,67 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
             long reading = scale.getReading();
             sum += reading;
             validSamples++;
-            debugPrintf("NAU7802: Scale sample %d: %ld\n", i+1, reading);
+            debugSerial("Scale sample %d: %ld\n", i+1, reading);
         } else {
-            debugPrintf("NAU7802: Scale sample %d: timeout\n", i+1);
+            debugSerial("Scale sample %d: timeout\n", i+1);
         }
         delay(50); // Short delay between readings
     }
     
     if (validSamples < samples / 2) {
         lastError = NAU7802_CALIBRATION_FAILED;
+        LOG_ERROR("NAU7802: Insufficient calibration samples: %d/%d", validSamples, samples);
         logError(lastError, "calibrateScale - insufficient samples");
-        debugPrintf("NAU7802: Only got %d valid samples out of %d\n", validSamples, samples);
+        debugSerial("Only got %d valid samples out of %d\n", validSamples, samples);
         return lastError;
     }
     
     long rawReading = sum / validSamples;
-    debugPrintf("NAU7802: Average raw reading: %ld, zero offset: %ld\n", rawReading, zeroOffset);
+    debugSerial("Average raw reading: %ld, zero offset: %ld\n", rawReading, zeroOffset);
     
     // Calculate calibration factor
     float adjustedReading = rawReading - zeroOffset;
-    debugPrintf("NAU7802: Adjusted reading (raw - zero): %.2f\n", adjustedReading);
+    debugSerial("Calibration calculation details:\n");
+    debugSerial("  Raw reading: %ld\n", rawReading);
+    debugSerial("  Zero offset: %ld\n", zeroOffset);
+    debugSerial("  Adjusted reading: %.2f\n", adjustedReading);
+    debugSerial("  Known weight: %.2f\n", knownWeight);
     
     if (abs(adjustedReading) < 10) { // Lower threshold for sensitive load cells
         lastError = NAU7802_CALIBRATION_FAILED;
+        LOG_ERROR("NAU7802: Calibration failed - adjusted reading %.2f too small", adjustedReading);
         logError(lastError, "calibrateScale - reading too close to zero");
-        debugPrintf("NAU7802: Adjusted reading %.2f is too small (< 10)\n", adjustedReading);
+        debugSerial("ERROR: Adjusted reading %.2f is too small (< 10)\n", adjustedReading);
+        debugSerial("This suggests zero calibration was not done or failed\n");
         return lastError;
     }
     
+    // Perform the division and check for validity
     calibrationFactor = knownWeight / adjustedReading;
+    debugSerial("  Calculated factor: %.6f\n", calibrationFactor);
+    
+    // Validate calibration factor
+    if (isnan(calibrationFactor) || isinf(calibrationFactor) || calibrationFactor == 0.0) {
+        lastError = NAU7802_CALIBRATION_FAILED;
+        LOG_ERROR("NAU7802: Invalid calibration factor calculated: %.6f", calibrationFactor);
+        logError(lastError, "calibrateScale - invalid calibration factor calculated");
+        debugSerial("ERROR: Invalid calibration factor %.6f\n", calibrationFactor);
+        debugSerial("NaN check: %s, Inf check: %s, Zero check: %s\n",
+            isnan(calibrationFactor) ? "TRUE" : "FALSE",
+            isinf(calibrationFactor) ? "TRUE" : "FALSE", 
+            (calibrationFactor == 0.0) ? "TRUE" : "FALSE");
+        calibrationFactor = 1.0; // Reset to safe default
+        return lastError;
+    }
+    
     isCalibrated = true;
     
-    debugPrintf("NAU7802: Scale calibration completed, factor=%.6f\n", calibrationFactor);
-    debugPrintf("NAU7802: Test calculation: %.2f weight -> %.2f result\n", 
+    // Standard system logging (permanent)
+    LOG_INFO("NAU7802: Scale calibration completed successfully, factor=%.6f", calibrationFactor);
+    
+    // Temporary debugging (troubleshooting)
+    debugSerial("Scale calibration completed successfully, factor=%.6f\n", calibrationFactor);
+    debugSerial("Test calculation: %.2f weight -> %.2f result\n", 
         knownWeight, adjustedReading * calibrationFactor);
     
     // Save calibration to EEPROM
@@ -274,9 +322,25 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
 }
 
 void NAU7802Sensor::setCalibrationFactor(float factor) {
+    // Temporary debugging (troubleshooting) - goes to serial only
+    debugSerial("setCalibrationFactor called with %.6f\n", factor);
+    
+    // Validate the factor before setting
+    if (isnan(factor) || isinf(factor)) {
+        LOG_ERROR("NAU7802: Invalid calibration factor rejected: %.6f", factor);
+        debugSerial("ERROR: Attempting to set invalid calibration factor %.6f, rejecting\n", factor);
+        return;
+    }
+    
     calibrationFactor = factor;
     isCalibrated = (factor != 1.0);
-    debugPrintf("NAU7802: Calibration factor set to %.6f\n", factor);
+    
+    // Standard system logging (permanent) - goes to syslog
+    LOG_INFO("NAU7802: Calibration factor set to %.6f", factor);
+    
+    // Temporary debugging (troubleshooting) - goes to serial only
+    debugSerial("Calibration factor successfully set to %.6f (calibrated=%s)\n", 
+               factor, isCalibrated ? "true" : "false");
 }
 
 float NAU7802Sensor::getCalibrationFactor() const {
@@ -499,7 +563,8 @@ bool NAU7802Sensor::loadCalibration() {
     
     // Verify magic number
     if (data.magic != NAU7802_CALIBRATION_MAGIC) {
-        debugPrintf("NAU7802: Invalid calibration magic in EEPROM\n");
+        LOG_WARN("NAU7802: No valid calibration found in EEPROM");
+        debugSerial("Invalid calibration magic in EEPROM\n");
         return false;
     }
     
@@ -510,18 +575,38 @@ bool NAU7802Sensor::loadCalibration() {
                                  data.gain + data.sampleRate;
     
     if (data.checksum != calculatedChecksum) {
-        debugPrintf("NAU7802: Calibration checksum mismatch in EEPROM\n");
+        LOG_ERROR("NAU7802: Calibration data corrupted in EEPROM");
+        debugSerial("Calibration checksum mismatch in EEPROM\n");
         return false;
     }
     
     // Apply loaded calibration
-    calibrationFactor = data.calibrationFactor;
+    LOG_INFO("NAU7802: Loading calibration from EEPROM");
+    debugSerial("Loading calibration from EEPROM:\n");
+    debugSerial("  Magic: 0x%08X (expected: 0x%08X)\n", data.magic, NAU7802_CALIBRATION_MAGIC);
+    debugSerial("  Factor: %.6f\n", data.calibrationFactor);
+    debugSerial("  Zero offset: %ld\n", data.zeroOffset);
+    debugSerial("  Gain: %d\n", data.gain);
+    debugSerial("  Sample rate: %d\n", data.sampleRate);
+    
+    // Validate calibration factor before applying
+    if (isnan(data.calibrationFactor) || isinf(data.calibrationFactor) || data.calibrationFactor == 0.0) {
+        LOG_ERROR("NAU7802: Invalid calibration factor in EEPROM: %.6f", data.calibrationFactor);
+        debugSerial("ERROR: Invalid calibration factor %.6f in EEPROM, using default\n", data.calibrationFactor);
+        calibrationFactor = 1.0;
+        isCalibrated = false;
+    } else {
+        calibrationFactor = data.calibrationFactor;
+        isCalibrated = true;
+    }
+    
     zeroOffset = data.zeroOffset;
     setGain(data.gain);
     setSampleRate(data.sampleRate);
-    isCalibrated = true;
     
-    debugPrintf("NAU7802: Calibration loaded from EEPROM (factor=%.6f, offset=%ld)\n", 
+    LOG_INFO("NAU7802: Calibration loaded successfully (factor=%.6f, offset=%ld)", 
+        calibrationFactor, zeroOffset);
+    debugSerial("Calibration loaded from EEPROM (factor=%.6f, offset=%ld)\n", 
         calibrationFactor, zeroOffset);
     return true;
 }
@@ -547,7 +632,33 @@ void NAU7802Sensor::initializeDefaults() {
 
 float NAU7802Sensor::applyCalibration(long rawValue) {
     float adjustedValue = rawValue - zeroOffset;
-    return adjustedValue * calibrationFactor;
+    float result = adjustedValue * calibrationFactor;
+    
+    // Debug: Check for problematic calibration factor
+    if (calibrationFactor == 0.0 || isnan(calibrationFactor) || isinf(calibrationFactor)) {
+        // System error (permanent) - goes to syslog
+        LOG_ERROR("NAU7802: Invalid calibration factor during weight calculation: %.6f", calibrationFactor);
+        
+        // Temporary debugging (troubleshooting) - goes to serial only
+        debugSerial("ERROR in applyCalibration - invalid calibrationFactor=%.6f\n", calibrationFactor);
+        debugSerial("  rawValue=%ld, zeroOffset=%ld, adjustedValue=%.2f\n", 
+                   rawValue, zeroOffset, adjustedValue);
+        return NAN; // Return NaN to indicate error
+    }
+    
+    // Debug: Check for infinite result
+    if (isnan(result) || isinf(result)) {
+        // System error (permanent) - goes to syslog
+        LOG_ERROR("NAU7802: Invalid weight calculation result: %.6f", result);
+        
+        // Temporary debugging (troubleshooting) - goes to serial only
+        debugSerial("ERROR in applyCalibration - invalid result=%.6f\n", result);
+        debugSerial("  rawValue=%ld, zeroOffset=%ld, adjustedValue=%.2f, factor=%.6f\n", 
+                   rawValue, zeroOffset, adjustedValue, calibrationFactor);
+        return NAN;
+    }
+    
+    return result;
 }
 
 void NAU7802Sensor::updateFilter(float value) {

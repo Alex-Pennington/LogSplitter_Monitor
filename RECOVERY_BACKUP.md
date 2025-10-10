@@ -15,8 +15,8 @@ If you need to restore to this working state from any repository:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Alex-Pennington/LogSplitter_Monitor.git
-cd LogSplitter_Monitor
+git clone https://github.com/Alex-Pennington/LogSplitter_Controller.git
+cd LogSplitter_Controller
 
 # Switch to the backup branch
 git checkout backup-working-config-manager

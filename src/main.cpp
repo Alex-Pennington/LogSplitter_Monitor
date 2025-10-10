@@ -1,5 +1,4 @@
-#include <Arduino.h>
-#include <Wire.h>
+﻿#include <Arduino.h>
 #include "constants.h"
 #include "network_manager.h"
 #include "telnet_server.h"
@@ -8,9 +7,6 @@
 #include "lcd_display.h"
 #include "mcp9600_sensor.h"
 #include "logger.h"
-#include "heartbeat_animation.h"
-#include "tca9548a_multiplexer.h"
-#include "monitor_config.h"
 
 // Global instances
 NetworkManager networkManager;
@@ -18,8 +14,6 @@ TelnetServer telnetServer;
 MonitorSystem monitorSystem;
 CommandProcessor commandProcessor;
 LCDDisplay lcdDisplay;
-HeartbeatAnimation heartbeat;
-MonitorConfigManager configManager;
 
 // Global pointer for external access
 NetworkManager* g_networkManager = &networkManager;
@@ -69,38 +63,6 @@ void setup() {
     Serial.println("   Version: 1.0.0");
     Serial.println("===============================================");
     
-    // Initialize I2C bus BEFORE any sensors
-    Serial.println("DEBUG: Initializing I2C bus (Wire1)...");
-    Wire1.begin();
-    delay(100); // Allow I2C bus to stabilize
-    Serial.println("DEBUG: I2C bus initialized");
-    
-    // Scan I2C bus to see what devices are present
-    Serial.println("DEBUG: Scanning I2C bus for devices...");
-    int deviceCount = 0;
-    for (byte address = 1; address < 127; address++) {
-        Wire1.beginTransmission(address);
-        byte error = Wire1.endTransmission();
-        
-        if (error == 0) {
-            Serial.print("DEBUG: I2C device found at address 0x");
-            if (address < 16) Serial.print("0");
-            Serial.print(address, HEX);
-            Serial.println();
-            deviceCount++;
-        }
-    }
-    
-    if (deviceCount == 0) {
-        Serial.println("DEBUG: No I2C devices found on the bus!");
-        Serial.println("DEBUG: Check wiring: SDA to A4/SDA1, SCL to A5/SCL1");
-    } else {
-        Serial.print("DEBUG: Found ");
-        Serial.print(deviceCount);
-        Serial.println(" I2C device(s)");
-    }
-    Serial.println("DEBUG: I2C scan complete");
-    
     // Initialize system components one by one with debug output
     Serial.println("DEBUG: About to initialize components");
     
@@ -109,61 +71,28 @@ void setup() {
     Serial.println("DEBUG: Monitor system initialized");
     
     Serial.println("DEBUG: Initializing LCD display...");
-    // Create temporary multiplexer instance for LCD initialization
-    TCA9548A_Multiplexer tempMux(0x70);
-    if (tempMux.begin()) {
-        tempMux.selectChannel(7); // LCD_CHANNEL = 7
-        if (lcdDisplay.begin()) {
-            Serial.println("DEBUG: LCD display initialized successfully");
-        } else {
-            Serial.println("DEBUG: LCD display initialization failed or not present");
-        }
-        tempMux.disableAllChannels();
+    if (lcdDisplay.begin()) {
+        Serial.println("DEBUG: LCD display initialized successfully");
     } else {
-        Serial.println("DEBUG: Could not access multiplexer for LCD initialization");
+        Serial.println("DEBUG: LCD display initialization failed or not present");
     }
-    
-    Serial.println("DEBUG: Initializing heartbeat animation...");
-    heartbeat.begin();
-    heartbeat.setHeartRate(72); // Normal resting heart rate
-    heartbeat.setBrightness(128); // Medium brightness
-    heartbeat.enable();
-    Serial.println("DEBUG: Heartbeat animation started successfully");
     
     monitorSystem.setSystemState(SYS_INITIALIZING);
     Serial.println("DEBUG: System state set to initializing");
     
-    Serial.println("DEBUG: Initializing configuration manager...");
-    configManager.begin();
-    Serial.println("DEBUG: Configuration manager initialized");
-    
     Serial.println("DEBUG: Initializing command processor...");
     commandProcessor.begin(&networkManager, &monitorSystem);
-    commandProcessor.setHeartbeatAnimation(&heartbeat);
     Serial.println("DEBUG: Command processor initialized");
     
     Serial.println("DEBUG: About to initialize network manager...");
     networkManager.begin();
     Serial.println("DEBUG: Network manager initialized");
     
-    // Initialize Logger system with NetworkManager and apply config
+    // Initialize Logger system with NetworkManager
     Serial.println("DEBUG: Initializing Logger system...");
     Logger::begin(&networkManager);
-    
-    // Apply configuration settings
-    Serial.println("DEBUG: Applying configuration settings...");
-    Logger::setLogLevel(static_cast<LogLevel>(configManager.getLogLevel()));
-    
-    // Update NetworkManager with syslog settings if enabled
-    if (configManager.getLogToSyslog()) {
-        networkManager.setSyslogServer(
-            configManager.getSyslogServer(),
-            configManager.getSyslogPort()
-        );
-    }
-    
-    LOG_INFO("LogSplitter Monitor v1.0.0 starting up with persistent config");
-    Serial.println("DEBUG: Logger and configuration applied");
+    Logger::setLogLevel(LOG_INFO);  // Default to INFO level
+    Serial.println("DEBUG: Logger initialized");
     
     // Show connecting message on LCD
     lcdDisplay.showConnectingMessage();
@@ -177,7 +106,6 @@ void setup() {
     Serial.println("DEBUG: Telnet connection info set");
     
     debugPrintf("System: All components initialized\n");
-    LOG_INFO("System initialization complete - transitioning to network connection");
     currentSystemState = SYS_CONNECTING;
     monitorSystem.setSystemState(SYS_CONNECTING);
     
@@ -195,16 +123,12 @@ void loop() {
     networkManager.update();
     monitorSystem.update();
     
-    // Update heartbeat animation (minimal CPU usage)
-    heartbeat.update();
-    
     // Start telnet server once network is connected
     if (networkManager.isWiFiConnected() && currentSystemState == SYS_CONNECTING) {
         telnetServer.begin(23);
         currentSystemState = SYS_MONITORING;
         monitorSystem.setSystemState(SYS_MONITORING);
         
-        LOG_INFO("Network connection established - telnet server started on port 23");
         debugPrintf("System: Network connected, telnet server started\n");
         Serial.println("Network connected! Telnet server running on port 23");
         Serial.print("IP Address: ");
@@ -264,7 +188,6 @@ void loop() {
     if (!networkManager.isWiFiConnected() && currentSystemState == SYS_MONITORING) {
         currentSystemState = SYS_CONNECTING;
         monitorSystem.setSystemState(SYS_CONNECTING);
-        LOG_ERROR("Network connection lost - attempting reconnection");
         debugPrintf("System: Network disconnected, entering connecting state\n");
     }
     

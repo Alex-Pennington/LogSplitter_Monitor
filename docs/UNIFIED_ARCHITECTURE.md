@@ -1,4 +1,4 @@
-# LogSplitter Monitor System Architecture
+# LogSplitter Unified Controller-Monitor Architecture
 
 ## Overview
 
@@ -9,7 +9,7 @@ The LogSplitter system has evolved into a unified, distributed Arduino-based ind
 ### Unified Repository Structure
 
 ```
-LogSplitter_Monitor/
+LogSplitter_Controller/
 ├── [Controller Project - Root Directory]
 │   ├── src/                    # Controller source code
 │   ├── include/                # Controller headers
@@ -104,7 +104,7 @@ Both units implement identical RFC 3164 compliant syslog integration:
 - **Dynamic Control**: Runtime log level adjustment via `loglevel` commands
 - **Centralized Server**: All logs sent to 192.168.1.238:514
 - **Facility**: Local0 (16) with proper priority calculation
-- **Application Tags**: "logmonitor" (Monitor System)
+- **Application Tags**: "logsplitter" (Controller), "logmonitor" (Monitor)
 
 ### Network Integration
 Both units share identical network infrastructure:

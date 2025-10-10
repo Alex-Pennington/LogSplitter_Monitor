@@ -16,7 +16,7 @@ Congratulations! The LogSplitter unified repository is now complete and fully op
 ### 📁 **Current Repository Structure**
 
 ```
-LogSplitter_Monitor/  (Standalone Repository)
+LogSplitter_Controller/  (Unified Repository)
 ├── README.md                 # ✅ Main project overview
 ├── Makefile                  # ✅ Build automation system
 ├── platformio.ini           # ✅ Controller build configuration
@@ -153,7 +153,7 @@ loglevel 7             # DEBUG
 - **Shared logger** replaces individual logger implementations
 
 ### **Version Control**
-- Your existing git history in LogSplitter_Monitor is **preserved**
+- Your existing git history in LogSplitter_Controller is **preserved**
 - After migration, this becomes your **unified repository**
 - You can optionally **create a new repository** for the unified structure
 

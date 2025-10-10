@@ -1,16 +1,12 @@
-#include "command_processor.h"
+﻿#include "command_processor.h"
 #include "lcd_display.h"
 #include "logger.h"
-#include "heartbeat_animation.h"
-#include "arduino_secrets.h"
-#include "monitor_config.h"
 #include <ctype.h>
 #include <string.h>
 #include <Wire.h>
 
 extern void debugPrintf(const char* fmt, ...);
 extern bool g_debugEnabled;
-extern MonitorConfigManager configManager;
 extern LCDDisplay* g_lcdDisplay;
 
 // Static data for rate limiting
@@ -99,8 +95,7 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         handleDebug(param, response, responseSize);
     }
     else if (strcasecmp(cmd, "network") == 0) {
-        char* subcommand = strtok(NULL, " ");
-        handleNetwork(subcommand, response, responseSize);
+        handleNetwork(response, responseSize);
     }
     else if (strcasecmp(cmd, "reset") == 0) {
         char* param = strtok(NULL, " ");
@@ -114,11 +109,6 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         char* param = strtok(NULL, " ");
         handleSyslog(param, response, responseSize);
     }
-    else if (strcasecmp(cmd, "config") == 0) {
-        char* param = strtok(NULL, " ");
-        char* value = strtok(NULL, " ");
-        handleConfig(param, value, response, responseSize);
-    }
     else if (strcasecmp(cmd, "monitor") == 0) {
         char* param = strtok(NULL, " ");
         char* value = strtok(NULL, " ");
@@ -128,21 +118,6 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         char* param = strtok(NULL, " ");
         char* value = strtok(NULL, " ");
         handleWeight(param, value, response, responseSize);
-    }
-    else if (strcasecmp(cmd, "temp") == 0) {
-        char* param = strtok(NULL, " ");
-        char* value = strtok(NULL, " ");
-        handleTemperature(param, value, response, responseSize);
-    }
-    else if (strcasecmp(cmd, "power") == 0) {
-        char* param = strtok(NULL, " ");
-        char* value = strtok(NULL, " ");
-        handlePower(param, value, response, responseSize);
-    }
-    else if (strcasecmp(cmd, "adc") == 0) {
-        char* param = strtok(NULL, " ");
-        char* value = strtok(NULL, " ");
-        handleAdc(param, value, response, responseSize);
     }
     else if (strcasecmp(cmd, "loglevel") == 0) {
         char* param = strtok(NULL, " ");
@@ -158,10 +133,6 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         char* value = strtok(NULL, " ");
         handleLCD(param, value, response, responseSize);
     }
-    else if (strcasecmp(cmd, "heartbeat") == 0) {
-        char* param = strtok(NULL, " ");
-        handleHeartbeat(param, response, responseSize);
-    }
     else {
         snprintf(response, responseSize, "unknown command: %s", cmd);
         return false;
@@ -176,22 +147,7 @@ void CommandProcessor::handleHelp(char* response, size_t responseSize, bool from
         "help           - Show this help\r\n" 
         "show           - Show sensor readings\r\n"
         "status         - Show system status\r\n"
-        "network [subcommand] - Network management\r\n"
-        "  status       - Detailed network status\r\n"
-        "  reconnect    - Reconnect WiFi\r\n"
-        "  mqtt_reconnect - Reconnect MQTT\r\n"
-        "  syslog_test  - Test syslog connectivity\r\n"
-        "set <param> <value> - Live configuration\r\n"
-        "  syslog <server:port> - Reconfigure syslog server\r\n"
-        "  mqtt_broker <host:port> - Reconfigure MQTT broker\r\n"
-        "  wifi_ssid <ssid> - Reconfigure WiFi SSID\r\n"
-        "  loglevel <0-7> - Set logging level\r\n"
-        "  debug <on|off> - Toggle debug mode\r\n"
-        "config <action> - Configuration management\r\n"
-        "  show         - Show current configuration\r\n"
-        "  save         - Save current config to EEPROM\r\n"
-        "  load         - Load config from EEPROM\r\n"
-        "  reset        - Reset to factory defaults\r\n"
+        "network        - Show network status\r\n"
         "debug [on|off] - Toggle debug mode\r\n"
         "loglevel [0-7] - Set logging level (0=EMERGENCY, 7=DEBUG)\r\n"
         "monitor start  - Start monitoring\r\n"
@@ -203,23 +159,12 @@ void CommandProcessor::handleHelp(char* response, size_t responseSize, bool from
         "temp read      - Read temperature sensors (Fahrenheit)\r\n"
         "temp readc     - Read temperature sensors (Celsius)\r\n"
         "temp local|localc - Local temperature (F/C)\r\n"
-        "power read     - Read power sensor (voltage, current, power)\r\n"
-        "power voltage  - Read bus voltage only\r\n"
-        "power current  - Read current only\r\n"
-        "adc read       - Read ADC sensor voltage and raw value\r\n"
-        "adc voltage    - Read ADC voltage only\r\n"
-        "adc raw        - Read ADC raw value only\r\n"
-        "adc status     - Show ADC sensor status and configuration\r\n"
         "temp remote|remotec - Remote temperature (F/C)\r\n"
         "temp status    - Show temperature sensor status\r\n"
-        "temp debug on|off - Toggle temperature sensor debug output\r\n"
         "temp offset <local> <remote> - Set temperature offsets\r\n"
         "lcd on|off     - Turn LCD display on/off\r\n"
         "lcd backlight on|off - Control LCD backlight\r\n"
         "lcd clear      - Clear LCD display\r\n"
-        "heartbeat on|off - Control heartbeat animation\r\n"
-        "heartbeat rate <bpm> - Set heart rate (30-200 BPM)\r\n"
-        "heartbeat brightness <0-255> - Set brightness\r\n"
         "test network   - Test network connectivity\r\n"
         "syslog test    - Send test syslog message\r\n"
         "reset system   - Restart the device");
@@ -294,10 +239,7 @@ void CommandProcessor::handleSet(char* param, char* value, char* response, size_
         }
         
         Logger::setLogLevel(static_cast<LogLevel>(level));
-        // Save to configuration
-        configManager.setLogLevel(level);
-        configManager.save();
-        snprintf(response, responseSize, "Log level set to %d and saved", level);
+        snprintf(response, responseSize, "Log level set to %d", level);
     }
     else if (strcasecmp(param, "syslog") == 0) {
         if (networkManager) {
@@ -314,69 +256,11 @@ void CommandProcessor::handleSet(char* param, char* value, char* response, size_
                 }
             }
             
-            // Use live reconfiguration method
-            bool result = networkManager->reconfigureSyslog(value, port);
-            if (result) {
-                // Update configuration and save to EEPROM
-                configManager.setSyslogServer(value);
-                if (portPtr) {
-                    configManager.setSyslogPort(port);
-                    snprintf(response, responseSize, "syslog server reconfigured to %s:%d and saved", value, port);
-                } else {
-                    snprintf(response, responseSize, "syslog server reconfigured to %s:%d and saved", value, SYSLOG_PORT);
-                }
-                configManager.save();
-            } else {
-                snprintf(response, responseSize, "syslog reconfiguration failed");
-            }
-        } else {
-            snprintf(response, responseSize, "Network manager not available");
-        }
-    }
-    else if (strcasecmp(param, "mqtt_broker") == 0) {
-        if (networkManager) {
-            // Parse broker address and optional port
-            char* portPtr = strchr(value, ':');
-            int port = BROKER_PORT;
-            
+            networkManager->setSyslogServer(value, port);
             if (portPtr) {
-                *portPtr = '\0'; // Split the string
-                port = atoi(portPtr + 1);
-                if (port <= 0 || port > 65535) {
-                    snprintf(response, responseSize, "Invalid port number");
-                    return;
-                }
-            }
-            
-            // Use live reconfiguration method
-            bool result = networkManager->reconfigureMQTT(value, port, MQTT_USER, MQTT_PASS);
-            if (result) {
-                // Update configuration and save to EEPROM
-                configManager.setMqttBroker(value);
-                if (portPtr) {
-                    configManager.setMqttPort(port);
-                    snprintf(response, responseSize, "MQTT broker reconfigured to %s:%d and saved", value, port);
-                } else {
-                    snprintf(response, responseSize, "MQTT broker reconfigured to %s:%d and saved", value, BROKER_PORT);
-                }
-                configManager.save();
+                snprintf(response, responseSize, "syslog server set to %s:%d", value, port);
             } else {
-                snprintf(response, responseSize, "MQTT reconfiguration failed");
-            }
-        } else {
-            snprintf(response, responseSize, "Network manager not available");
-        }
-    }
-    else if (strcasecmp(param, "wifi_ssid") == 0) {
-        if (networkManager) {
-            // For security, we need the password too - this is a simplified example
-            // In a real implementation, you'd want to handle this more securely
-            bool result = networkManager->reconfigureWiFi(value, SECRET_PASS);
-            if (result) {
-                // Note: WiFi SSID is not stored in persistent config for security
-                snprintf(response, responseSize, "WiFi SSID reconfigured to %s", value);
-            } else {
-                snprintf(response, responseSize, "WiFi reconfiguration failed");
+                snprintf(response, responseSize, "syslog server set to %s:%d", value, SYSLOG_PORT);
             }
         } else {
             snprintf(response, responseSize, "Network manager not available");
@@ -431,58 +315,11 @@ void CommandProcessor::handleDebug(char* param, char* response, size_t responseS
     }
 }
 
-void CommandProcessor::handleNetwork(char* subcommand, char* response, size_t responseSize) {
-    if (!networkManager) {
-        snprintf(response, responseSize, "network manager not available");
-        return;
-    }
-    
-    if (!subcommand) {
-        // Default behavior - show network status
+void CommandProcessor::handleNetwork(char* response, size_t responseSize) {
+    if (networkManager) {
         networkManager->getHealthString(response, responseSize);
-        return;
-    }
-    
-    if (strcasecmp(subcommand, "status") == 0) {
-        char healthBuffer[256];
-        networkManager->getHealthString(healthBuffer, sizeof(healthBuffer));
-        
-        snprintf(response, responseSize, 
-            "network status: %s | syslog: %s:%d | hostname: %s",
-            healthBuffer,
-            networkManager->getSyslogServer(),
-            networkManager->getSyslogPort(),
-            networkManager->getHostname());
-    }
-    else if (strcasecmp(subcommand, "reconnect") == 0) {
-        // Force WiFi reconnection
-        if (networkManager->isWiFiConnected()) {
-            snprintf(response, responseSize, "disconnecting WiFi for reconnection...");
-            // The reconfigureWiFi method will handle reconnection with current credentials
-            networkManager->reconfigureWiFi(SECRET_SSID, SECRET_PASS);
-        } else {
-            snprintf(response, responseSize, "WiFi not connected - attempting connection");
-            networkManager->reconfigureWiFi(SECRET_SSID, SECRET_PASS);
-        }
-    }
-    else if (strcasecmp(subcommand, "mqtt_reconnect") == 0) {
-        if (networkManager->isWiFiConnected()) {
-            bool result = networkManager->reconfigureMQTT(BROKER_HOST, BROKER_PORT, MQTT_USER, MQTT_PASS);
-            snprintf(response, responseSize, "MQTT reconnection %s", result ? "successful" : "failed");
-        } else {
-            snprintf(response, responseSize, "WiFi not connected - cannot reconnect MQTT");
-        }
-    }
-    else if (strcasecmp(subcommand, "syslog_test") == 0) {
-        if (networkManager->isWiFiConnected()) {
-            bool result = networkManager->sendSyslog("NETWORK COMMAND SYSLOG TEST - LogSplitter Monitor");
-            snprintf(response, responseSize, "syslog test %s", result ? "successful" : "failed");
-        } else {
-            snprintf(response, responseSize, "WiFi not connected - cannot test syslog");
-        }
-    }
-    else {
-        snprintf(response, responseSize, "network subcommands: status, reconnect, mqtt_reconnect, syslog_test");
+    } else {
+        snprintf(response, responseSize, "network manager not available");
     }
 }
 
@@ -530,7 +367,7 @@ void CommandProcessor::handleTest(char* param, char* response, size_t responseSi
         if (monitorSystem) {
             float localTempF = monitorSystem->getLocalTemperatureF();
             float remoteTempF = monitorSystem->getRemoteTemperatureF();
-            snprintf(response, responseSize, "sensor test: local=%.1f°F remote=%.1f°F", localTempF, remoteTempF);
+            snprintf(response, responseSize, "sensor test: local=%.1f┬░F remote=%.1f┬░F", localTempF, remoteTempF);
         } else {
             snprintf(response, responseSize, "monitor system not available");
         }
@@ -857,7 +694,7 @@ void CommandProcessor::handleTemperature(char* param, char* value, char* respons
     }
     
     if (!param) {
-        snprintf(response, responseSize, "temp commands: read, readc, local, remote, localc, remotec, status, debug, offset");
+        snprintf(response, responseSize, "temp commands: read, readc, local, remote, localc, remotec, status, offset");
         return;
     }
     
@@ -883,19 +720,19 @@ void CommandProcessor::handleTemperature(char* param, char* value, char* respons
     }
     else if (strcasecmp(param, "local") == 0) {
         float localTempF = monitorSystem->getLocalTemperatureF();
-        snprintf(response, responseSize, "local temperature: %.2f°F", localTempF);
+        snprintf(response, responseSize, "local temperature: %.2f┬░F", localTempF);
     }
     else if (strcasecmp(param, "localc") == 0) {
         float localTemp = monitorSystem->getLocalTemperature();
-        snprintf(response, responseSize, "local temperature: %.2f°C", localTemp);
+        snprintf(response, responseSize, "local temperature: %.2f┬░C", localTemp);
     }
     else if (strcasecmp(param, "remote") == 0) {
         float remoteTempF = monitorSystem->getRemoteTemperatureF();
-        snprintf(response, responseSize, "remote temperature: %.2f°F", remoteTempF);
+        snprintf(response, responseSize, "remote temperature: %.2f┬░F", remoteTempF);
     }
     else if (strcasecmp(param, "remotec") == 0) {
         float remoteTemp = monitorSystem->getRemoteTemperature();
-        snprintf(response, responseSize, "remote temperature: %.2f°C", remoteTemp);
+        snprintf(response, responseSize, "remote temperature: %.2f┬░C", remoteTemp);
     }
     else if (strcasecmp(param, "status") == 0) {
         char statusBuffer[256];
@@ -921,181 +758,11 @@ void CommandProcessor::handleTemperature(char* param, char* value, char* respons
         float remoteOffset = atof(remoteStr);
         
         monitorSystem->setTemperatureOffset(localOffset, remoteOffset);
-        snprintf(response, responseSize, "temperature offsets set: local=%.2f°C, remote=%.2f°C", 
+        snprintf(response, responseSize, "temperature offsets set: local=%.2f┬░C, remote=%.2f┬░C", 
                 localOffset, remoteOffset);
-    }
-    else if (strcasecmp(param, "debug") == 0) {
-        if (!value) {
-            // Show current debug state
-            MCP9600Sensor* tempSensor = monitorSystem->getTemperatureSensor();
-            bool debugEnabled = tempSensor->isDebugEnabled();
-            snprintf(response, responseSize, "temperature debug: %s", debugEnabled ? "ON" : "OFF");
-            return;
-        }
-        
-        if (strcasecmp(value, "on") == 0) {
-            MCP9600Sensor* tempSensor = monitorSystem->getTemperatureSensor();
-            tempSensor->enableDebugOutput(true);
-            snprintf(response, responseSize, "temperature debug enabled");
-        }
-        else if (strcasecmp(value, "off") == 0) {
-            MCP9600Sensor* tempSensor = monitorSystem->getTemperatureSensor();
-            tempSensor->enableDebugOutput(false);
-            snprintf(response, responseSize, "temperature debug disabled");
-        }
-        else {
-            snprintf(response, responseSize, "usage: temp debug [on|off]");
-        }
     }
     else {
         snprintf(response, responseSize, "unknown temperature command: %s", param);
-    }
-}
-
-void CommandProcessor::handlePower(char* param, char* value, char* response, size_t responseSize) {
-    if (!monitorSystem) {
-        snprintf(response, responseSize, "monitor system not available");
-        return;
-    }
-    
-    if (!param) {
-        snprintf(response, responseSize, "power commands: read, voltage, current, watts, status");
-        return;
-    }
-    
-    if (strcasecmp(param, "read") == 0) {
-        bool ready = monitorSystem->isPowerSensorReady();
-        if (ready) {
-            float voltage = monitorSystem->getBusVoltage();
-            float current = monitorSystem->getCurrent();
-            float power = monitorSystem->getPower();
-            snprintf(response, responseSize, "%.3fV, %.2fmA, %.2fmW", voltage, current, power);
-        } else {
-            snprintf(response, responseSize, "power sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "voltage") == 0) {
-        bool ready = monitorSystem->isPowerSensorReady();
-        if (ready) {
-            float voltage = monitorSystem->getBusVoltage();
-            snprintf(response, responseSize, "bus voltage: %.3fV", voltage);
-        } else {
-            snprintf(response, responseSize, "power sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "current") == 0) {
-        bool ready = monitorSystem->isPowerSensorReady();
-        if (ready) {
-            float current = monitorSystem->getCurrent();
-            snprintf(response, responseSize, "current: %.2fmA", current);
-        } else {
-            snprintf(response, responseSize, "power sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "watts") == 0 || strcasecmp(param, "power") == 0) {
-        bool ready = monitorSystem->isPowerSensorReady();
-        if (ready) {
-            float power = monitorSystem->getPower();
-            snprintf(response, responseSize, "power: %.2fmW", power);
-        } else {
-            snprintf(response, responseSize, "power sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "status") == 0) {
-        bool ready = monitorSystem->isPowerSensorReady();
-        float voltage = monitorSystem->getBusVoltage();
-        float current = monitorSystem->getCurrent();
-        float power = monitorSystem->getPower();
-        snprintf(response, responseSize, "INA219: %s, %.3fV, %.2fmA, %.2fmW", 
-                ready ? "READY" : "NOT READY", voltage, current, power);
-    }
-    else {
-        snprintf(response, responseSize, "unknown power command: %s", param);
-    }
-}
-
-void CommandProcessor::handleAdc(char* param, char* value, char* response, size_t responseSize) {
-    if (!monitorSystem) {
-        snprintf(response, responseSize, "monitor system not available");
-        return;
-    }
-    
-    if (!param) {
-        snprintf(response, responseSize, "adc commands: read, voltage, raw, status, config");
-        return;
-    }
-    
-    if (strcasecmp(param, "read") == 0) {
-        bool ready = monitorSystem->isAdcSensorReady();
-        if (ready) {
-            float voltage = monitorSystem->getAdcVoltage();
-            int32_t raw = monitorSystem->getAdcRawValue();
-            snprintf(response, responseSize, "%.6fV, raw: %ld", voltage, raw);
-        } else {
-            snprintf(response, responseSize, "ADC sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "voltage") == 0) {
-        bool ready = monitorSystem->isAdcSensorReady();
-        if (ready) {
-            float voltage = monitorSystem->getAdcVoltage();
-            snprintf(response, responseSize, "ADC voltage: %.6fV", voltage);
-        } else {
-            snprintf(response, responseSize, "ADC sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "raw") == 0) {
-        bool ready = monitorSystem->isAdcSensorReady();
-        if (ready) {
-            int32_t raw = monitorSystem->getAdcRawValue();
-            snprintf(response, responseSize, "ADC raw: %ld", raw);
-        } else {
-            snprintf(response, responseSize, "ADC sensor not available");
-        }
-    }
-    else if (strcasecmp(param, "status") == 0) {
-        char statusBuffer[256];
-        monitorSystem->getAdcSensorStatus(statusBuffer, sizeof(statusBuffer));
-        snprintf(response, responseSize, "%s", statusBuffer);
-    }
-    else if (strcasecmp(param, "config") == 0) {
-        if (!value) {
-            // Show current configuration
-            MCP3421_Sensor* adcSensor = monitorSystem->getAdcSensor();
-            int resolution = adcSensor->getResolution();
-            int gain = 1 << adcSensor->getGain();
-            snprintf(response, responseSize, "MCP3421: %d-bit, Gain=%dx, Vref=%.3fV", 
-                    resolution, gain, adcSensor->getReferenceVoltage());
-            return;
-        }
-        
-        // Handle configuration changes
-        if (strcasecmp(value, "12bit") == 0) {
-            MCP3421_Sensor* adcSensor = monitorSystem->getAdcSensor();
-            adcSensor->setSampleRate(MCP3421_12_BIT_240_SPS);
-            snprintf(response, responseSize, "ADC set to 12-bit, 240 SPS");
-        }
-        else if (strcasecmp(value, "14bit") == 0) {
-            MCP3421_Sensor* adcSensor = monitorSystem->getAdcSensor();
-            adcSensor->setSampleRate(MCP3421_14_BIT_60_SPS);
-            snprintf(response, responseSize, "ADC set to 14-bit, 60 SPS");
-        }
-        else if (strcasecmp(value, "16bit") == 0) {
-            MCP3421_Sensor* adcSensor = monitorSystem->getAdcSensor();
-            adcSensor->setSampleRate(MCP3421_16_BIT_15_SPS);
-            snprintf(response, responseSize, "ADC set to 16-bit, 15 SPS");
-        }
-        else if (strcasecmp(value, "18bit") == 0) {
-            MCP3421_Sensor* adcSensor = monitorSystem->getAdcSensor();
-            adcSensor->setSampleRate(MCP3421_18_BIT_3_75_SPS);
-            snprintf(response, responseSize, "ADC set to 18-bit, 3.75 SPS");
-        }
-        else {
-            snprintf(response, responseSize, "usage: adc config [12bit|14bit|16bit|18bit]");
-        }
-    }
-    else {
-        snprintf(response, responseSize, "unknown adc command: %s", param);
     }
 }
 
@@ -1252,10 +919,6 @@ void CommandProcessor::handleLogLevel(const char* param, char* response, size_t 
         int level = atoi(param);
         if (level >= 0 && level <= 7) {
             Logger::setLogLevel(static_cast<LogLevel>(level));
-            // Save to configuration
-            configManager.setLogLevel(level);
-            configManager.save();
-            
             const char* levelName;
             switch (level) {
                 case LOG_EMERGENCY: levelName = "EMERGENCY"; break;
@@ -1268,211 +931,9 @@ void CommandProcessor::handleLogLevel(const char* param, char* response, size_t 
                 case LOG_DEBUG: levelName = "DEBUG"; break;
                 default: levelName = "UNKNOWN"; break;
             }
-            snprintf(response, responseSize, "Log level set to %d (%s) and saved", level, levelName);
+            snprintf(response, responseSize, "Log level set to %d (%s)", level, levelName);
         } else {
             snprintf(response, responseSize, "usage: loglevel [get|list|<0-7>]");
         }
-    }
-}
-
-void CommandProcessor::handleHeartbeat(char* param, char* response, size_t responseSize) {
-    if (!heartbeatAnimation) {
-        snprintf(response, responseSize, "heartbeat animation not initialized");
-        return;
-    }
-
-    if (!param || strcasecmp(param, "status") == 0) {
-        // Show heartbeat status
-        bool enabled = heartbeatAnimation->getEnabled();
-        uint16_t bpm = heartbeatAnimation->getHeartRate();
-        uint8_t brightness = heartbeatAnimation->getBrightness();
-        snprintf(response, responseSize, "Heartbeat: %s, %d BPM, brightness %d", 
-                 enabled ? "ENABLED" : "DISABLED", bpm, brightness);
-                 
-    } else if (strcasecmp(param, "on") == 0 || strcasecmp(param, "enable") == 0) {
-        heartbeatAnimation->enable();
-        snprintf(response, responseSize, "Heartbeat animation enabled");
-        
-    } else if (strcasecmp(param, "off") == 0 || strcasecmp(param, "disable") == 0) {
-        heartbeatAnimation->disable();
-        snprintf(response, responseSize, "Heartbeat animation disabled");
-        
-    } else if (strncasecmp(param, "rate", 4) == 0) {
-        // Extract BPM value: "rate 72" or "rate72"
-        char* bpmStr = param + 4;
-        if (*bpmStr == ' ') bpmStr++; // Skip space if present
-        if (*bpmStr == '\0') {
-            // No value provided, get next token
-            bpmStr = strtok(NULL, " ");
-        }
-        
-        if (bpmStr) {
-            int bpm = atoi(bpmStr);
-            if (bpm >= 30 && bpm <= 200) {
-                heartbeatAnimation->setHeartRate(bpm);
-                snprintf(response, responseSize, "Heart rate set to %d BPM", bpm);
-            } else {
-                snprintf(response, responseSize, "Invalid heart rate (30-200 BPM)");
-            }
-        } else {
-            snprintf(response, responseSize, "usage: heartbeat rate <30-200>");
-        }
-        
-    } else if (strncasecmp(param, "brightness", 10) == 0) {
-        // Extract brightness value: "brightness 128" or "brightness128"
-        char* brightnessStr = param + 10;
-        if (*brightnessStr == ' ') brightnessStr++; // Skip space if present
-        if (*brightnessStr == '\0') {
-            // No value provided, get next token
-            brightnessStr = strtok(NULL, " ");
-        }
-        
-        if (brightnessStr) {
-            int brightness = atoi(brightnessStr);
-            if (brightness >= 0 && brightness <= 255) {
-                heartbeatAnimation->setBrightness(brightness);
-                snprintf(response, responseSize, "Brightness set to %d", brightness);
-            } else {
-                snprintf(response, responseSize, "Invalid brightness (0-255)");
-            }
-        } else {
-            snprintf(response, responseSize, "usage: heartbeat brightness <0-255>");
-        }
-        
-    } else if (strncasecmp(param, "frame", 5) == 0) {
-        // Extract frame number: "frame 2" or "frame2"
-        char* frameStr = param + 5;
-        if (*frameStr == ' ') frameStr++; // Skip space if present
-        if (*frameStr == '\0') {
-            // No value provided, get next token
-            frameStr = strtok(NULL, " ");
-        }
-        
-        if (frameStr) {
-            int frame = atoi(frameStr);
-            if (frame >= 0 && frame <= 3) {
-                heartbeatAnimation->displayFrame(frame);
-                snprintf(response, responseSize, "Displaying frame %d", frame);
-            } else {
-                snprintf(response, responseSize, "Invalid frame (0-3)");
-            }
-        } else {
-            snprintf(response, responseSize, "usage: heartbeat frame <0-3>");
-        }
-        
-    } else {
-        snprintf(response, responseSize, 
-                "usage: heartbeat [on|off|rate <bpm>|brightness <0-255>|frame <0-3>|status]");
-    }
-}
-
-void CommandProcessor::handleConfig(char* param, char* value, char* response, size_t responseSize) {
-    if (!param) {
-        snprintf(response, responseSize, "usage: config [show|save|load|reset]");
-        return;
-    }
-    
-    if (strcasecmp(param, "show") == 0) {
-        // Show current configuration
-        snprintf(response, responseSize,
-                "Configuration:\r\n"
-                "Network:\r\n"
-                "  WiFi Timeout: %lu ms\r\n"
-                "  MQTT Reconnect: %lu ms\r\n"
-                "  Network Stability: %lu ms\r\n"
-                "  Max Retries: %d\r\n"
-                "Syslog:\r\n"
-                "  Server: %s\r\n"
-                "  Port: %d\r\n"
-                "  Hostname: %s\r\n"
-                "MQTT:\r\n"
-                "  Broker: %s\r\n"
-                "  Port: %d\r\n"
-                "  Username: %s\r\n"
-                "Logging:\r\n"
-                "  Level: %d\r\n"
-                "  To Serial: %s\r\n"
-                "  To Syslog: %s\r\n"
-                "Sensors:\r\n"
-                "  Read Interval: %lu ms\r\n"
-                "  Temp Offset: %.2f C\r\n"
-                "  Filtering: %s",
-                configManager.getWifiConnectTimeoutMs(),
-                configManager.getMqttReconnectIntervalMs(),
-                configManager.getNetworkStabilityTimeMs(),
-                configManager.getMaxConnectRetries(),
-                configManager.getSyslogServer(),
-                configManager.getSyslogPort(),
-                configManager.getSyslogHostname(),
-                configManager.getMqttBroker(),
-                configManager.getMqttPort(),
-                configManager.getMqttUsername(),
-                configManager.getLogLevel(),
-                configManager.getLogToSerial() ? "yes" : "no",
-                configManager.getLogToSyslog() ? "yes" : "no",
-                configManager.getSensorReadIntervalMs(),
-                configManager.getTemperatureOffset(),
-                configManager.getEnableSensorFiltering() ? "yes" : "no"
-        );
-        
-    } else if (strcasecmp(param, "save") == 0) {
-        // Save current configuration to EEPROM
-        bool success = configManager.save();
-        if (success) {
-            snprintf(response, responseSize, "Configuration saved to EEPROM");
-            LOG_INFO("Configuration saved to EEPROM via telnet command");
-        } else {
-            snprintf(response, responseSize, "Failed to save configuration to EEPROM");
-            LOG_ERROR("Failed to save configuration to EEPROM");
-        }
-        
-    } else if (strcasecmp(param, "load") == 0) {
-        // Load configuration from EEPROM
-        bool success = configManager.load();
-        if (success) {
-            // Apply loaded configuration to running systems
-            Logger::setLogLevel(static_cast<LogLevel>(configManager.getLogLevel()));
-            
-            // Update NetworkManager syslog settings
-            if (configManager.getLogToSyslog()) {
-                networkManager->setSyslogServer(
-                    configManager.getSyslogServer(),
-                    configManager.getSyslogPort()
-                );
-            }
-            
-            snprintf(response, responseSize, "Configuration loaded from EEPROM and applied");
-            LOG_INFO("Configuration loaded from EEPROM via telnet command");
-        } else {
-            snprintf(response, responseSize, "Failed to load configuration from EEPROM");
-            LOG_ERROR("Failed to load configuration from EEPROM");
-        }
-        
-    } else if (strcasecmp(param, "reset") == 0) {
-        // Reset to factory defaults
-        configManager.resetToDefaults();
-        bool success = configManager.save();
-        
-        if (success) {
-            // Apply default configuration to running systems
-            Logger::setLogLevel(static_cast<LogLevel>(configManager.getLogLevel()));
-            
-            // Update NetworkManager syslog settings
-            if (configManager.getLogToSyslog()) {
-                networkManager->setSyslogServer(
-                    configManager.getSyslogServer(),
-                    configManager.getSyslogPort()
-                );
-            }
-            
-            snprintf(response, responseSize, "Configuration reset to factory defaults");
-            LOG_INFO("Configuration reset to factory defaults via telnet command");
-        } else {
-            snprintf(response, responseSize, "Failed to save factory defaults to EEPROM");
-            LOG_ERROR("Failed to save factory defaults to EEPROM");
-        }
-        
-    } else {
-        snprintf(response, responseSize, "usage: config [show|save|load|reset]");
     }
 }

@@ -1,35 +1,40 @@
-# LogSplitter Monitor System
+# LogSplitter Industrial Control System
 
-A comprehensive Arduino-based monitoring system for industrial log splitting operations, featuring precision sensors, LCD display, LED matrix heartbeat animation, and remote management capabilities.
+A distributed Arduino-based control system for industrial log splitting operations, featuring comprehensive monitoring, safety systems, and remote management capabilities.
 
 ## 🏗️ System Architecture
 
-The LogSplitter Monitor is a standalone system designed to provide comprehensive monitoring for industrial operations:
+The LogSplitter system consists of two coordinated Arduino UNO R4 WiFi units in a unified repository:
 
-- **Monitor System** (root directory) - Remote monitoring with precision sensors, LCD display, and LED matrix heartbeat animation
-- **Sensor Integration** - Weight, temperature, and environmental monitoring with I2C multiplexer support
+- **Controller** (root directory) - Main control unit with safety systems and relay management
+- **[Monitor](monitor/)** - Remote monitoring with precision sensors, LCD display, and LED matrix heartbeat animation
 
-The Monitor system provides comprehensive sensor integration, visual feedback, and remote monitoring capabilities.
+Both units share unified logging infrastructure and communicate via MQTT for real-time coordination.
 
-### Key Features of the Monitor System:
-- **Precision Sensing**: Weight monitoring with NAU7802, temperature with MAX6656, and environmental sensors
-- **Visual Feedback**: 20x4 LCD display and 12x8 LED matrix with animated heartbeat (30-200 BPM)
-- **Network Integration**: WiFi connectivity, MQTT communication, and telnet command interface
-- **Comprehensive Monitoring**: Real-time sensor data collection and remote system management
+### Key Features of the Unified Architecture:
+- **Clean Separation**: Controller handles industrial control, Monitor handles displays and sensing
+- **Visual Feedback**: Monitor features 12x8 LED matrix with animated heartbeat (30-200 BPM)
+- **Shared Infrastructure**: Unified logging, MQTT communication, and command interfaces
+- **Coordinated Operation**: Both units work together for comprehensive system management
 
 ## ⚡ Quick Start
 
-### 1. Hardware Setup
-Connect your sensors to the Arduino UNO R4 WiFi via the Qwiic connector and I2C interface.
-
-### 2. Build and Upload
+### 1. Controller Setup
 ```bash
-# Build the monitor system
+# Controller files are in the root directory
 pio run --target upload
 ```
+See [README_REFACTORED.md](README_REFACTORED.md) for detailed controller setup.
 
-### 3. Configuration
-See [MONITOR_README.md](MONITOR_README.md) for detailed setup and [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for complete system deployment.
+### 2. Monitor Setup
+```bash
+cd monitor/
+pio run --target upload
+```
+See [monitor/README.md](monitor/README.md) for detailed monitor setup.
+
+### 3. System Integration
+See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for complete system deployment.
 
 ## 🔧 Core Features
 
@@ -53,67 +58,64 @@ See [MONITOR_README.md](MONITOR_README.md) for detailed setup and [docs/DEPLOYME
 
 ## 🏭 Industrial Applications
 
-### Primary Use Case: Industrial Monitoring Operations
-- **Sensor Data Collection** - Precision weight, temperature, and environmental monitoring
-- **Remote Monitoring** - Real-time sensor data collection and system health monitoring
-- **Visual Feedback** - LCD display and LED matrix heartbeat animation for system status
-- **Data Logging** - Complete audit trail of sensor readings and system events
+### Primary Use Case: Log Splitting Operations
+- **Hydraulic Control** - Precision relay management for log splitting machinery with unified safety monitoring for both automatic sequences and manual operations
+- **Safety Monitoring** - Pressure threshold enforcement, limit switch protection, and emergency stops
+- **Remote Oversight** - Real-time monitoring and control via MQTT
+- **Operational Logging** - Complete audit trail of all operations
 
 ### System Benefits
-- **Precision** - Industrial-grade Arduino R4 WiFi platform with precision sensors
-- **Reliability** - Comprehensive error handling and system health monitoring
-- **Maintainability** - Remote diagnostics via telnet and comprehensive logging
-- **Flexibility** - Modular sensor architecture with I2C multiplexer support
+- **Reliability** - Industrial-grade Arduino R4 WiFi platform
+- **Scalability** - Distributed architecture supports multiple units
+- **Maintainability** - Comprehensive logging and remote diagnostics
+- **Safety** - Multiple redundant safety systems and monitoring
 
 ## 📊 Component Overview
 
 | Component | Purpose | Key Features |
 |-----------|---------|--------------|
-| **Monitor Core** | Main monitoring logic | Sensor management, display control, data collection |
-| **Sensor Systems** | Data acquisition | Weight (NAU7802), temperature (MAX6656), environmental monitoring |
-| **Display Systems** | Visual feedback | 20x4 LCD display, 12x8 LED matrix heartbeat animation |
-| **Network Stack** | Connectivity | WiFi management, MQTT pub/sub, telnet server |
-| **Logger System** | Data logging | RFC 3164 syslog, dynamic levels, network transmission |
+| **Controller** | Main control logic | Relay control, safety systems, sequence management |
+| **Monitor** | Remote monitoring | Sensor readings, LCD display, weight measurement |
+| **Shared Logger** | Unified logging | RFC 3164 syslog, dynamic levels, network transmission |
+| **Network Stack** | Connectivity | WiFi management, MQTT pub/sub, telnet servers |
 
 ## 🌐 Network Architecture
 
 ```
-┌─────────────────┐
-│  Monitor System │
-│  (Standalone)   │
-├─────────────────┤
-│ • Sensor Data   │
-│ • LCD Display   │
-│ • Weight Scale  │
-│ • LED Matrix    │
-│ • Telnet :23    │
-└─────────┬───────┘
-          │
-          │
-          │
- ┌────────▼────────┐
- │  Network Infra  │
- ├─────────────────┤
- │ • WiFi Router   │
- │ • MQTT Broker   │
- │ • Syslog Server │
- └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐
+│   Controller    │    │     Monitor     │
+│   (Main Unit)   │    │  (Remote Unit)  │
+├─────────────────┤    ├─────────────────┤
+│ • Relay Control │    │ • Sensor Data   │
+│ • Safety Logic  │    │ • LCD Display   │
+│ • Sequence Mgmt │    │ • Weight Scale  │
+│ • Telnet :23    │    │ • Telnet :23    │
+└─────────┬───────┘    └─────────┬───────┘
+          │                      │
+          └──────────┬───────────┘
+                     │
+            ┌────────▼────────┐
+            │  Network Infra  │
+            ├─────────────────┤
+            │ • WiFi Router   │
+            │ • MQTT Broker   │
+            │ • Syslog Server │
+            └─────────────────┘
 ```
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - **PlatformIO** - Arduino development environment
-- **Arduino UNO R4 WiFi** - Single monitor unit
+- **Arduino UNO R4 WiFi** - Two units required
 - **Network Infrastructure** - WiFi router, MQTT broker, syslog server
-- **Sensors** - NAU7802 weight sensor, MAX6656 temperature sensor, LCD display
 
 ### Installation Steps
 
 1. **Clone Repository**
    ```bash
    git clone <repository-url>
-   cd LogSplitter_Monitor
+   cd LogSplitter_Controller
    ```
 
 2. **Configure Secrets**
@@ -186,42 +188,38 @@ set mqtt <host>         # Set MQTT broker host
 ## 📚 Documentation
 
 ### Component Documentation
-- **[Monitor System](MONITOR_README.md)** - Complete monitor setup and configuration  
-- **[Sensor Integration](INA219_INTEGRATION_SUMMARY.md)** - INA219 current/power sensor integration
-- **[ADC Integration](MCP3421_INTEGRATION_SUMMARY.md)** - MCP3421 precision ADC integration
-- **[Logging System](docs/LOGGING_SYSTEM.md)** - RFC 3164 syslog architecture
+- **[Controller](README_REFACTORED.md)** - Detailed controller setup and operation (root directory)
+- **[Monitor](monitor/README.md)** - Monitor system configuration with LCD and heartbeat animation
+- **[Unified Architecture](docs/UNIFIED_ARCHITECTURE.md)** - Complete system architecture and coordination
+- **[Logging System](docs/LOGGING_SYSTEM.md)** - Unified logging architecture
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Complete system deployment
 
 ### Technical Documentation
-- **[Monitor Architecture](docs/UNIFIED_ARCHITECTURE.md)** - Technical system overview
+- **[System Architecture](docs/SYSTEM_ARCHITECTURE.md)** - Technical system overview
 - **[Network Integration](docs/NETWORK_INTEGRATION.md)** - MQTT and syslog setup
+- **[Safety Systems](COMPREHENSIVE_REVIEW.md)** - Safety system details (root directory)
 - **[Command Reference](COMMANDS.md)** - Complete command documentation
-- **[Error Codes](ERROR.md)** - System error documentation
 
 ## 🔧 Development
 
 ### Building
 ```bash
-# Build Monitor system
-pio run
+# Build both components
+make build-all
 
-# Upload to device
-pio run --target upload
-
-# Monitor serial output
-pio device monitor
+# Build individual components
+pio run              # Controller (from root directory)
+cd monitor && pio run  # Monitor
 ```
 
 ### Testing
 ```bash
-# Test via telnet interface
-telnet <monitor_ip> 23
+# Run system tests
+make test
 
-# Available test commands:
-test sensors     # Test all sensor systems  
-test network     # Test network connectivity
-test weight      # Test weight sensor
-temp read        # Test temperature sensors
+# Test individual components
+pio test              # Controller (from root directory)
+cd monitor && pio test  # Monitor
 ```
 
 ### Debugging
@@ -244,16 +242,16 @@ telnet <device-ip> 23
 ## 📈 Monitoring & Maintenance
 
 ### System Health
-- **Uptime Tracking** - Monitor reports operational uptime and system status
+- **Uptime Tracking** - Both units report operational uptime
 - **Connection Monitoring** - WiFi and MQTT health tracking
-- **Sensor Monitoring** - Real-time sensor health and calibration status  
+- **Error Reporting** - Comprehensive error logging and alerting
 - **Performance Metrics** - Memory usage and response time monitoring
 
 ### Maintenance Tasks
 - **Log Rotation** - Configure syslog server for log management
-- **Firmware Updates** - Upload updates via PlatformIO  
-- **Sensor Calibration** - Weight sensor calibration and EEPROM preservation
-- **Hardware Monitoring** - Temperature, voltage, and current monitoring
+- **Firmware Updates** - OTA updates via PlatformIO
+- **Configuration Backup** - EEPROM settings preservation
+- **Hardware Monitoring** - Temperature and voltage monitoring
 
 ## 🤝 Contributing
 
@@ -278,6 +276,6 @@ This system controls industrial equipment. Always follow proper safety procedure
 
 ---
 
-**Version**: 1.0.0  
+**Version**: 2.0.0  
 **Platform**: Arduino UNO R4 WiFi  
 **Last Updated**: October 2025

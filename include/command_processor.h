@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "constants.h"
 #include "network_manager.h"
@@ -9,13 +9,11 @@ public:
     CommandProcessor();
     
     void begin(NetworkManager* network, MonitorSystem* monitor);
-    void setHeartbeatAnimation(class HeartbeatAnimation* heartbeat) { heartbeatAnimation = heartbeat; }
     bool processCommand(char* commandBuffer, bool fromMqtt, char* response, size_t responseSize);
     
 private:
     NetworkManager* networkManager;
     MonitorSystem* monitorSystem;
-    class HeartbeatAnimation* heartbeatAnimation = nullptr;
     
     // Command handlers
     void handleHelp(char* response, size_t responseSize, bool fromMqtt);
@@ -23,19 +21,15 @@ private:
     void handleStatus(char* response, size_t responseSize);
     void handleSet(char* param, char* value, char* response, size_t responseSize);
     void handleDebug(char* param, char* response, size_t responseSize);
-    void handleNetwork(char* subcommand, char* response, size_t responseSize);
+    void handleNetwork(char* response, size_t responseSize);
     void handleReset(char* param, char* response, size_t responseSize);
     void handleTest(char* param, char* response, size_t responseSize);
     void handleSyslog(char* param, char* response, size_t responseSize);
     void handleMonitor(char* param, char* value, char* response, size_t responseSize);
     void handleWeight(char* param, char* value, char* response, size_t responseSize);
     void handleTemperature(char* param, char* value, char* response, size_t responseSize);
-    void handlePower(char* param, char* value, char* response, size_t responseSize);
-    void handleAdc(char* param, char* value, char* response, size_t responseSize);
     void handleLCD(char* param, char* value, char* response, size_t responseSize);
     void handleLogLevel(const char* param, char* response, size_t responseSize);
-    void handleHeartbeat(char* param, char* response, size_t responseSize);
-    void handleConfig(char* param, char* value, char* response, size_t responseSize);
 };
 
 class CommandValidator {

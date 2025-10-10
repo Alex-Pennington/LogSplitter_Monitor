@@ -1,8 +1,8 @@
-# LogSplitter Monitor - Error Code Documentation
+# LogSplitter Controller - Error Code Documentation
 
 ## Overview
 
-This document provides comprehensive information about all system errors that can activate the status LED and error reporting in the LogSplitter Monitor System. Each error includes severity classification, root causes, source code locations, and troubleshooting guidance.
+This document provides comprehensive information about all system errors that can activate the mill lamp (System Error LED on Pin 9) in the LogSplitter Controller. Each error includes severity classification, root causes, source code locations, and troubleshooting guidance.
 
 ## Mill Lamp Behavior Summary
 

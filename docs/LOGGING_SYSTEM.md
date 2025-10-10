@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LogSplitter Monitor system implements a comprehensive, RFC 3164 compliant logging infrastructure that provides enterprise-grade operational visibility for monitoring and sensor systems. This unified approach ensures consistent log formatting, centralized collection, and intelligent severity-based filtering.
+The LogSplitter system implements a comprehensive, RFC 3164 compliant logging infrastructure that provides enterprise-grade operational visibility across both Controller and Monitor units. This unified approach ensures consistent log formatting, centralized collection, and intelligent severity-based filtering.
 
 ## Architecture
 
@@ -213,7 +213,7 @@ $UDPServerRun 514
 $UDPServerAddress 0.0.0.0
 
 # LogSplitter specific logging
-:hostname, isequal, "LogMonitor" /var/log/logsplitter-monitor.log
+:hostname, isequal, "LogSplitter" /var/log/logsplitter-controller.log
 :hostname, isequal, "LogMonitor" /var/log/logsplitter-monitor.log
 & stop
 ```
@@ -240,7 +240,7 @@ sudo systemctl restart rsyslog
 **By Hostname:**
 ```conf
 # Controller messages
-:hostname, isequal, "LogMonitor" /var/log/monitor.log
+:hostname, isequal, "LogSplitter" /var/log/controller.log
 
 # Monitor messages  
 :hostname, isequal, "LogMonitor" /var/log/monitor.log
@@ -377,7 +377,7 @@ loglevel 7
 grep -E "<13[0-9]>" /var/log/logsplitter-*.log
 
 # Find messages from specific device
-grep "LogMonitor" /var/log/logsplitter-monitor.log
+grep "LogSplitter" /var/log/logsplitter-controller.log
 
 # Find high-priority messages (0-3)
 grep -E "<12[8-9]>|<13[0-3]>" /var/log/logsplitter-*.log

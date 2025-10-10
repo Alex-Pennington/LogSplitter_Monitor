@@ -1,6 +1,6 @@
-# LogSplitter Monitor Command Reference
+# LogSplitter Controller Command Reference
 
-This document details all available commands for the LogSplitter Monitor System via Serial Console, Telnet, and MQTT.
+This document details all available commands for the LogSplitter Controller via Serial Console, Telnet, and MQTT.
 
 ## Communication Interfaces
 

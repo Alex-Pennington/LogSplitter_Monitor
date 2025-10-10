@@ -100,7 +100,7 @@ $UDPServerRun 514
 $UDPServerAddress 0.0.0.0
 
 # LogSplitter specific logging
-:hostname, isequal, "LogMonitor" /var/log/logsplitter-monitor.log
+:hostname, isequal, "LogSplitter" /var/log/logsplitter-controller.log
 :hostname, isequal, "LogMonitor" /var/log/logsplitter-monitor.log
 & stop
 ```
@@ -119,7 +119,7 @@ Clone and configure the repository:
 
 ```bash
 # Clone repository
-git clone <repository-url> LogSplitter_Monitor
+git clone <repository-url> LogSplitter
 cd LogSplitter
 
 # Configure WiFi credentials
@@ -234,7 +234,7 @@ Check syslog reception:
 
 ```bash
 # Monitor syslog files
-sudo tail -f /var/log/logsplitter-monitor.log
+sudo tail -f /var/log/logsplitter-controller.log
 sudo tail -f /var/log/logsplitter-monitor.log
 
 # Should see RFC 3164 formatted messages:
@@ -345,7 +345,7 @@ sudo cp /etc/rsyslog.conf /backup/logsplitter/
 sudo cp /etc/rsyslog.d/* /backup/logsplitter/
 
 # Backup firmware
-cp .pio/build/uno_r4_wifi/firmware.bin /backup/logsplitter/monitor-firmware.bin
+cp .pio/build/uno_r4_wifi/firmware.bin /backup/logsplitter/controller-firmware.bin
 cp monitor/.pio/build/uno_r4_wifi/firmware.bin /backup/logsplitter/monitor-firmware.bin
 ```
 
