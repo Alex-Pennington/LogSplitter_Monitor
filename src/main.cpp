@@ -1,4 +1,5 @@
 ﻿#include <Arduino.h>
+#include <Wire.h>
 #include "constants.h"
 #include "network_manager.h"
 #include "telnet_server.h"
@@ -21,7 +22,7 @@ LCDDisplay* g_lcdDisplay = &lcdDisplay;
 MCP9600Sensor* g_mcp9600Sensor = nullptr; // Will be set by monitor system
 
 // Global debug flag
-bool g_debugEnabled = true; // Enable debug by default for troubleshooting
+bool g_debugEnabled = false; // Disabled by default for production use
 
 // System state
 SystemState currentSystemState = SYS_INITIALIZING;
@@ -37,10 +38,6 @@ void debugPrintf(const char* fmt, ...) {
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
     
-    // Send to Serial for local debugging
-    Serial.print("DEBUG: ");
-    Serial.print(buffer);
-    
     // Send to syslog server if network is available
     if (networkManager.isWiFiConnected()) {
         // Remove newlines for syslog
@@ -49,6 +46,11 @@ void debugPrintf(const char* fmt, ...) {
             buffer[len-1] = '\0';
         }
         networkManager.sendSyslog(buffer);
+    } else {
+        // Only send to Serial when network is NOT available and debug is enabled
+        // This allows local debugging during startup or network issues
+        Serial.print("DEBUG: ");
+        Serial.print(buffer);
     }
 }
 
@@ -57,60 +59,37 @@ void setup() {
     Serial.begin(115200);
     delay(1000); // Give time for serial monitor to connect
     
-    Serial.println("MONITOR STARTING...");
+    // Essential startup banner - always show
     Serial.println("===============================================");
-    Serial.println("   LogSplitter Monitor - Starting Up");
-    Serial.println("   Version: 1.0.0");
+    Serial.println("   LogSplitter Monitor v1.0.0 - Starting");
     Serial.println("===============================================");
     
-    // Initialize system components one by one with debug output
-    Serial.println("DEBUG: About to initialize components");
+    // Initialize I2C bus (Wire1) BEFORE any sensors try to use it
+    Wire1.begin();
+    Wire1.setClock(100000); // 100kHz for better compatibility with multiple devices
+    delay(200); // Give I2C bus time to stabilize
+    Serial.println("I2C Wire1 initialized at 100kHz");
     
-    Serial.println("DEBUG: Initializing monitor system...");
-    monitorSystem.begin();
-    Serial.println("DEBUG: Monitor system initialized");
-    
-    Serial.println("DEBUG: Initializing LCD display...");
-    if (lcdDisplay.begin()) {
-        Serial.println("DEBUG: LCD display initialized successfully");
-    } else {
-        Serial.println("DEBUG: LCD display initialization failed or not present");
-    }
-    
-    monitorSystem.setSystemState(SYS_INITIALIZING);
-    Serial.println("DEBUG: System state set to initializing");
-    
-    Serial.println("DEBUG: Initializing command processor...");
+    // Initialize command processor and network FIRST
     commandProcessor.begin(&networkManager, &monitorSystem);
-    Serial.println("DEBUG: Command processor initialized");
+    debugPrintf("Command processor initialized\n");
     
-    Serial.println("DEBUG: About to initialize network manager...");
     networkManager.begin();
-    Serial.println("DEBUG: Network manager initialized");
+    debugPrintf("Network manager initialized\n");
     
     // Initialize Logger system with NetworkManager
-    Serial.println("DEBUG: Initializing Logger system...");
     Logger::begin(&networkManager);
     Logger::setLogLevel(LOG_INFO);  // Default to INFO level
-    Serial.println("DEBUG: Logger initialized");
+    debugPrintf("Logger initialized\n");
     
-    // Show connecting message on LCD
-    lcdDisplay.showConnectingMessage();
-    
-    Serial.println("DEBUG: Setting hostname...");
     networkManager.setHostname("LogMonitor");
-    Serial.println("DEBUG: Hostname set");
-    
-    Serial.println("DEBUG: Setting telnet server connection info...");
     telnetServer.setConnectionInfo("LogMonitor", "1.0.0");
-    Serial.println("DEBUG: Telnet connection info set");
     
-    debugPrintf("System: All components initialized\n");
+    debugPrintf("Network initialization complete\n");
     currentSystemState = SYS_CONNECTING;
-    monitorSystem.setSystemState(SYS_CONNECTING);
     
-    Serial.println("System initialization complete");
-    Serial.println("Waiting for network connection...");
+    // Essential status message - always show 
+    Serial.println("System ready - connecting to network...");
 }
 
 void loop() {
@@ -119,20 +98,54 @@ void loop() {
     // Update watchdog
     lastWatchdog = now;
     
-    // Update all system components
+    // Update network first
     networkManager.update();
-    monitorSystem.update();
+    
+    // Initialize sensors after network is connected (one-time initialization)
+    static bool sensorsInitialized = false;
+    if (networkManager.isWiFiConnected() && !sensorsInitialized) {
+        Serial.println("Network connected - initializing I2C sensors...");
+        
+        // Now initialize the monitor system with all sensors
+        monitorSystem.begin();
+        debugPrintf("Monitor system initialized\n");
+        
+        // Add a small delay before LCD initialization for stability
+        delay(100);
+        
+        // Select LCD channel on multiplexer before initializing
+        Wire1.beginTransmission(0x70);
+        Wire1.write(1 << 7);  // Select channel 7 for LCD
+        Wire1.endTransmission();
+        delay(50);  // Allow channel to stabilize
+        
+        if (lcdDisplay.begin()) {
+            debugPrintf("LCD display initialized\n");
+            // Give LCD time to fully initialize before writing
+            delay(100);
+        } else {
+            debugPrintf("LCD display not present\n");
+        }
+        
+        sensorsInitialized = true;
+        monitorSystem.setSystemState(SYS_MONITORING);
+        
+        debugPrintf("All sensors initialized after network connection\n");
+        Serial.print("Network connected! IP: ");
+        Serial.println(WiFi.localIP());
+    }
     
     // Start telnet server once network is connected
     if (networkManager.isWiFiConnected() && currentSystemState == SYS_CONNECTING) {
         telnetServer.begin(23);
         currentSystemState = SYS_MONITORING;
-        monitorSystem.setSystemState(SYS_MONITORING);
         
-        debugPrintf("System: Network connected, telnet server started\n");
-        Serial.println("Network connected! Telnet server running on port 23");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
+        debugPrintf("Telnet server started\n");
+    }
+    
+    // Update monitor system (only if sensors are initialized)
+    if (sensorsInitialized) {
+        monitorSystem.update();
     }
     
     // Update telnet server
@@ -157,7 +170,7 @@ void loop() {
                 // Show prompt
                 telnetServer.print("\r\n> ");
                 
-                debugPrintf("Telnet command: %s, response: %s\n", 
+                debugPrintf("Telnet: %s -> %s\n", 
                     commandBuffer, strlen(response) > 0 ? response : "none");
             }
         }
@@ -188,7 +201,7 @@ void loop() {
     if (!networkManager.isWiFiConnected() && currentSystemState == SYS_MONITORING) {
         currentSystemState = SYS_CONNECTING;
         monitorSystem.setSystemState(SYS_CONNECTING);
-        debugPrintf("System: Network disconnected, entering connecting state\n");
+        debugPrintf("Network disconnected, reconnecting\n");
     }
     
     // System health check
@@ -198,12 +211,16 @@ void loop() {
         
         char healthStatus[256];
         monitorSystem.getStatusString(healthStatus, sizeof(healthStatus));
-        debugPrintf("Health check: %s\n", healthStatus);
+        debugPrintf("Health: %s\n", healthStatus);
         
         // Check memory and system health
         unsigned long freeMemory = monitorSystem.getFreeMemory();
         if (freeMemory < 5000) { // Less than 5KB free
-            debugPrintf("WARNING: Low memory detected: %lu bytes free\n", freeMemory);
+            // Critical memory warning - always show
+            Serial.print("WARNING: Low memory: ");
+            Serial.print(freeMemory);
+            Serial.println(" bytes free");
+            debugPrintf("Low memory: %lu bytes free\n", freeMemory);
         }
     }
     

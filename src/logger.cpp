@@ -59,9 +59,14 @@ void Logger::log(LogLevel level, const char* fmt, ...) {
         syslogSent = networkManager->sendSyslog(logBuffer, level);
     }
     
-    // Fallback to Serial if syslog fails (for debugging connectivity issues)
-    // Always show CRITICAL and ERROR messages on Serial regardless of syslog status
-    if (!syslogSent || level <= LOG_ERROR) {
+    // Output to Serial only in these cases:
+    // 1. CRITICAL or EMERGENCY messages (always shown)
+    // 2. ERROR messages (always shown) 
+    // 3. When syslog fails AND debug is enabled (fallback for troubleshooting)
+    extern bool g_debugEnabled;
+    bool shouldShowOnSerial = (level <= LOG_ERROR) || (!syslogSent && g_debugEnabled);
+    
+    if (shouldShowOnSerial) {
         unsigned long ts = millis();
         Serial.print("[");
         Serial.print(ts);

@@ -133,6 +133,10 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         char* value = strtok(NULL, " ");
         handleLCD(param, value, response, responseSize);
     }
+    else if (strcasecmp(cmd, "i2c") == 0) {
+        char* param = strtok(NULL, " ");
+        handleI2C(param, response, responseSize);
+    }
     else {
         snprintf(response, responseSize, "unknown command: %s", cmd);
         return false;
@@ -165,6 +169,13 @@ void CommandProcessor::handleHelp(char* response, size_t responseSize, bool from
         "lcd on|off     - Turn LCD display on/off\r\n"
         "lcd backlight on|off - Control LCD backlight\r\n"
         "lcd clear      - Clear LCD display\r\n"
+        "lcd test       - Display test pattern\r\n"
+        "lcd reinit     - Reinitialize LCD\r\n"
+        "lcd refresh    - Force LCD update with current data\r\n"
+        "i2c scan       - Scan Wire1 I2C bus for devices\r\n"
+        "i2c mux        - Scan through multiplexer channels\r\n"
+        "i2c status     - Show I2C bus status\r\n"
+        "i2c show       - Show detected I2C devices\r\n"
         "test network   - Test network connectivity\r\n"
         "syslog test    - Send test syslog message\r\n"
         "reset system   - Restart the device");
@@ -884,8 +895,76 @@ void CommandProcessor::handleLCD(char* param, char* value, char* response, size_
             snprintf(response, responseSize, "usage: lcd info <message>");
         }
     }
+    else if (strcasecmp(param, "test") == 0) {
+        // Test LCD by displaying test messages
+        g_lcdDisplay->clear();
+        delay(100);
+        g_lcdDisplay->showInfo("LCD TEST - Line 4");
+        delay(1000);
+        g_lcdDisplay->showError("LCD ERROR Test");
+        delay(1000);
+        g_lcdDisplay->showInfo("Display Working!");
+        snprintf(response, responseSize, "LCD test pattern displayed");
+    }
+    else if (strcasecmp(param, "reinit") == 0) {
+        // Reinitialize the LCD
+        // First, select the LCD channel (7) on the multiplexer at 0x70
+        Wire1.beginTransmission(0x70);
+        Wire1.write(1 << 7);  // Select channel 7 for LCD
+        Wire1.endTransmission();
+        delay(50);  // Allow channel to stabilize
+        
+        bool success = g_lcdDisplay->begin();
+        if (success) {
+            // Select LCD channel again before writing
+            Wire1.beginTransmission(0x70);
+            Wire1.write(1 << 7);  // Select channel 7 for LCD
+            Wire1.endTransmission();
+            delay(50);
+            g_lcdDisplay->showInfo("LCD Reinitialized");
+            snprintf(response, responseSize, "LCD reinitialized successfully");
+        } else {
+            snprintf(response, responseSize, "LCD reinitialization failed");
+        }
+    }
+    else if (strcasecmp(param, "refresh") == 0) {
+        // Force an immediate LCD update with current system data
+        if (monitorSystem) {
+            g_lcdDisplay->clear();
+            delay(100);
+            
+            // Manually trigger a display update
+            bool wifiConnected = networkManager && networkManager->isWiFiConnected();
+            bool mqttConnected = networkManager && networkManager->isMQTTConnected();
+            bool syslogWorking = networkManager && networkManager->isSyslogWorking();
+            
+            g_lcdDisplay->updateSystemStatus(
+                monitorSystem->getSystemState(),
+                monitorSystem->getUptime(),
+                wifiConnected,
+                mqttConnected,
+                syslogWorking
+            );
+            
+            float localTempF = monitorSystem->getLocalTemperatureF();
+            float remoteTempF = monitorSystem->getRemoteTemperatureF();
+            float weight = monitorSystem->getWeight();
+            
+            g_lcdDisplay->updateSensorReadings(localTempF, weight, remoteTempF);
+            
+            float voltage = monitorSystem->getBusVoltage();
+            float current = monitorSystem->getCurrent();
+            float adcVoltage = monitorSystem->getAdcVoltage();
+            
+            g_lcdDisplay->updateAdditionalSensors(voltage, current, adcVoltage);
+            
+            snprintf(response, responseSize, "LCD refreshed: W=%.1f T=%.1fF", weight, localTempF);
+        } else {
+            snprintf(response, responseSize, "Monitor system not available");
+        }
+    }
     else {
-        snprintf(response, responseSize, "usage: lcd [on|off|clear|backlight|info]");
+        snprintf(response, responseSize, "usage: lcd [on|off|clear|backlight|info|test|reinit|refresh]");
     }
 }
 
@@ -935,5 +1014,182 @@ void CommandProcessor::handleLogLevel(const char* param, char* response, size_t 
         } else {
             snprintf(response, responseSize, "usage: loglevel [get|list|<0-7>]");
         }
+    }
+}
+
+void CommandProcessor::handleI2C(char* param, char* response, size_t responseSize) {
+    if (!param) {
+        snprintf(response, responseSize, "i2c commands: scan, status, show");
+        return;
+    }
+    
+    if (strcasecmp(param, "scan") == 0) {
+        // Perform I2C scan on Wire1
+        debugPrintf("Starting I2C scan on Wire1...\n");
+        
+        // Reinitialize Wire1 to ensure clean state
+        Wire1.end();
+        Wire1.begin();
+        Wire1.setClock(100000); // 100kHz for better compatibility
+        delay(100);
+        
+        int deviceCount = 0;
+        char scanResult[512] = "I2C Scan Results (Wire1):\r\n";
+        char tempStr[64];
+        
+        for (uint8_t address = 1; address < 127; address++) {
+            Wire1.beginTransmission(address);
+            uint8_t error = Wire1.endTransmission();
+            
+            if (error == 0) {
+                deviceCount++;
+                snprintf(tempStr, sizeof(tempStr), "Device found at 0x%02X", address);
+                
+                // Add device identification
+                if (address == 0x2A) {
+                    strcat(tempStr, " (NAU7802 Load Cell)");
+                } else if (address == 0x60 || address == 0x67) {
+                    strcat(tempStr, " (MCP9600 Thermocouple)");
+                } else if (address == 0x40 || address == 0x44 || address == 0x41 || address == 0x45) {
+                    strcat(tempStr, " (INA219 Power Monitor)");
+                } else if (address == 0x68) {
+                    strcat(tempStr, " (MCP3421 ADC)");
+                } else if (address == 0x27 || address == 0x3F) {
+                    strcat(tempStr, " (LCD Display)");
+                } else if (address == 0x70) {
+                    strcat(tempStr, " (TCA9548A I2C Mux)");
+                }
+                
+                strcat(tempStr, "\r\n");
+                if (strlen(scanResult) + strlen(tempStr) < sizeof(scanResult) - 1) {
+                    strcat(scanResult, tempStr);
+                }
+                
+                debugPrintf("Found I2C device at 0x%02X\n", address);
+            }
+            else if (error == 4) {
+                debugPrintf("Unknown error at address 0x%02X\n", address);
+            }
+        }
+        
+        if (deviceCount == 0) {
+            strcat(scanResult, "No I2C devices found on Wire1\r\n");
+            strcat(scanResult, "Check connections and power");
+            debugPrintf("No I2C devices found on Wire1\n");
+        } else {
+            snprintf(tempStr, sizeof(tempStr), "Total devices found: %d", deviceCount);
+            if (strlen(scanResult) + strlen(tempStr) < sizeof(scanResult) - 1) {
+                strcat(scanResult, tempStr);
+            }
+            debugPrintf("I2C scan complete: %d devices found\n", deviceCount);
+        }
+        
+        strncpy(response, scanResult, responseSize - 1);
+        response[responseSize - 1] = '\0';
+    }
+    else if (strcasecmp(param, "status") == 0) {
+        // Show I2C bus status
+        char statusStr[256];
+        snprintf(statusStr, sizeof(statusStr), 
+            "I2C Wire1 Status:\r\n"
+            "Bus: Wire1 (Arduino R4 WiFi)\r\n"
+            "Clock: 100kHz\r\n"
+            "SDA Pin: A4 (18)\r\n"
+            "SCL Pin: A5 (19)\r\n"
+            "Bus State: %s",
+            "Active"); // Could add actual bus state detection
+        
+        strncpy(response, statusStr, responseSize - 1);
+        response[responseSize - 1] = '\0';
+        debugPrintf("I2C status requested\n");
+    }
+    else if (strcasecmp(param, "show") == 0) {
+        // Show known I2C device configurations
+        char showStr[400];
+        snprintf(showStr, sizeof(showStr),
+            "Expected I2C Devices on Wire1:\r\n"
+            "0x2A - NAU7802 Load Cell Sensor\r\n"
+            "0x60/0x67 - MCP9600 Thermocouple\r\n"
+            "0x40-0x4F - INA219 Power Monitor\r\n"
+            "0x68 - MCP3421 ADC\r\n"
+            "0x27/0x3F - LCD Display\r\n"
+            "0x70 - TCA9548A I2C Multiplexer\r\n"
+            "\r\nUse 'i2c scan' to detect connected devices");
+        
+        strncpy(response, showStr, responseSize - 1);
+        response[responseSize - 1] = '\0';
+        debugPrintf("I2C device list requested\n");
+    }
+    else if (strcasecmp(param, "mux") == 0) {
+        // Scan through multiplexer channels
+        char muxResult[512] = "Scanning through TCA9548A channels:\r\n";
+        char tempStr[80];
+        
+        // Check if multiplexer is present at 0x70
+        Wire1.beginTransmission(0x70);
+        uint8_t error = Wire1.endTransmission();
+        
+        if (error != 0) {
+            snprintf(response, responseSize, "TCA9548A multiplexer not found at 0x70");
+            return;
+        }
+        
+        debugPrintf("Scanning I2C multiplexer channels...\n");
+        
+        // Scan each channel (0-7)
+        for (uint8_t channel = 0; channel < 8; channel++) {
+            // Select channel
+            Wire1.beginTransmission(0x70);
+            Wire1.write(1 << channel);
+            Wire1.endTransmission();
+            delay(10);
+            
+            snprintf(tempStr, sizeof(tempStr), "Ch%d: ", channel);
+            strcat(muxResult, tempStr);
+            
+            bool foundDevice = false;
+            
+            // Scan for devices on this channel
+            for (uint8_t addr = 1; addr < 127; addr++) {
+                if (addr == 0x70) continue; // Skip mux address
+                
+                Wire1.beginTransmission(addr);
+                error = Wire1.endTransmission();
+                
+                if (error == 0) {
+                    foundDevice = true;
+                    snprintf(tempStr, sizeof(tempStr), "0x%02X ", addr);
+                    
+                    // Add device name if known
+                    if (addr == 0x2A) strcat(tempStr, "(NAU7802) ");
+                    else if (addr == 0x60 || addr == 0x67) strcat(tempStr, "(MCP9600) ");
+                    else if (addr >= 0x40 && addr <= 0x4F) strcat(tempStr, "(INA219) ");
+                    else if (addr == 0x68) strcat(tempStr, "(MCP3421) ");
+                    
+                    if (strlen(muxResult) + strlen(tempStr) < sizeof(muxResult) - 10) {
+                        strcat(muxResult, tempStr);
+                    }
+                    
+                    debugPrintf("Found device at 0x%02X on channel %d\n", addr, channel);
+                }
+            }
+            
+            if (!foundDevice) {
+                strcat(muxResult, "none");
+            }
+            strcat(muxResult, "\r\n");
+        }
+        
+        // Disable all channels when done
+        Wire1.beginTransmission(0x70);
+        Wire1.write(0);
+        Wire1.endTransmission();
+        
+        strncpy(response, muxResult, responseSize - 1);
+        response[responseSize - 1] = '\0';
+        debugPrintf("Multiplexer channel scan complete\n");
+    }
+    else {
+        snprintf(response, responseSize, "unknown i2c command: %s", param);
     }
 }

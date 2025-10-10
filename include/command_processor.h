@@ -29,6 +29,7 @@ private:
     void handleWeight(char* param, char* value, char* response, size_t responseSize);
     void handleTemperature(char* param, char* value, char* response, size_t responseSize);
     void handleLCD(char* param, char* value, char* response, size_t responseSize);
+    void handleI2C(char* param, char* response, size_t responseSize);
     void handleLogLevel(const char* param, char* response, size_t responseSize);
 };
 

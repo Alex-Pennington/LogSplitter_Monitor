@@ -742,9 +742,23 @@ MCP3421_Sensor* MonitorSystem::getAdcSensor() {
 
 bool MonitorSystem::calibrateWeightSensorZero() {
     debugPrintf("MonitorSystem: Starting weight sensor zero calibration\n");
+    
+    // Select the correct multiplexer channel for NAU7802
+    i2cMux.selectChannel(NAU7802_CHANNEL);
+    delay(50); // Give multiplexer time to switch
+    
     NAU7802Status status = weightSensor.calibrateZero();
     if (status == NAU7802_OK) {
         debugPrintf("MonitorSystem: Weight sensor zero calibration completed\n");
+        
+        // Force LCD to clear its cached content so it updates with new calibration
+        if (g_lcdDisplay) {
+            i2cMux.selectChannel(LCD_CHANNEL);
+            delay(50);
+            g_lcdDisplay->clear();
+            delay(100);
+        }
+        
         return true;
     } else {
         LOG_ERROR("MonitorSystem: Weight sensor zero calibration failed: %s", 
@@ -757,9 +771,23 @@ bool MonitorSystem::calibrateWeightSensorZero() {
 
 bool MonitorSystem::calibrateWeightSensorScale(float knownWeight) {
     debugPrintf("MonitorSystem: Starting weight sensor scale calibration with %.2f\n", knownWeight);
+    
+    // Select the correct multiplexer channel for NAU7802
+    i2cMux.selectChannel(NAU7802_CHANNEL);
+    delay(50); // Give multiplexer time to switch
+    
     NAU7802Status status = weightSensor.calibrateScale(knownWeight);
     if (status == NAU7802_OK) {
         debugPrintf("MonitorSystem: Weight sensor scale calibration completed\n");
+        
+        // Force LCD to clear its cached content so it updates with new calibration
+        if (g_lcdDisplay) {
+            i2cMux.selectChannel(LCD_CHANNEL);
+            delay(50);
+            g_lcdDisplay->clear();
+            delay(100);
+        }
+        
         return true;
     } else {
         LOG_ERROR("MonitorSystem: Weight sensor scale calibration failed: %s", 
@@ -772,6 +800,11 @@ bool MonitorSystem::calibrateWeightSensorScale(float knownWeight) {
 
 void MonitorSystem::tareWeightSensor() {
     debugPrintf("MonitorSystem: Taring weight sensor\n");
+    
+    // Select the correct multiplexer channel for NAU7802
+    i2cMux.selectChannel(NAU7802_CHANNEL);
+    delay(50); // Give multiplexer time to switch
+    
     weightSensor.tareScale();
 }
 

@@ -16,13 +16,27 @@ LCDDisplay::LCDDisplay(uint8_t address, uint8_t cols, uint8_t rows)
 bool LCDDisplay::begin() {
     debugPrintf("LCD: Initializing LCD display at address 0x%02X using Wire1", i2cAddress);
     
-    // Initialize Wire1 for all I2C devices on Arduino R4 WiFi
-    Wire1.begin();
-    delay(50); // Give I2C time to initialize
+    // Note: Wire1 should already be initialized by main.cpp
+    // Only initialize if not already started (check for first initialization)
+    if (!initialized) {
+        Wire1.begin();
+        delay(50); // Give I2C time to initialize
+    } else {
+        delay(50); // Still wait for multiplexer channel to stabilize
+    }
     
-    // Check if device is present first
-    if (!checkI2CDevice(i2cAddress)) {
-        debugPrintf("LCD: Device not found at address 0x%02X", i2cAddress);
+    // Check if device is present first (with retries for reliability)
+    int retries = 3;
+    bool deviceFound = false;
+    for (int i = 0; i < retries && !deviceFound; i++) {
+        deviceFound = checkI2CDevice(i2cAddress);
+        if (!deviceFound && i < retries - 1) {
+            delay(50);  // Wait before retry
+        }
+    }
+    
+    if (!deviceFound) {
+        debugPrintf("LCD: Device not found at address 0x%02X after %d retries", i2cAddress, retries);
         return false;
     }
     
