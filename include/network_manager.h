@@ -42,6 +42,9 @@ public:
     bool sendSyslog(const char* message, int level = 6);  // Default to INFO level
     void setSyslogServer(const char* server, int port = 514);  // Standard syslog port
     
+    // MQTT broker configuration
+    void setMQTTBroker(const char* broker, int port = 1883);  // Standard MQTT port
+    
     // Live reconfiguration methods
     bool reconfigureMQTT(const char* brokerHost, int brokerPort, const char* username, const char* password);
     bool reconfigureSyslog(const char* server, int port);

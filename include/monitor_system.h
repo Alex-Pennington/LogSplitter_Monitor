@@ -32,6 +32,7 @@ public:
     float getWeight();
     float getFilteredWeight();
     long getRawWeight() const;
+    float getFuelGallons() const;  // Get calculated fuel volume in gallons
     bool isWeightSensorReady();
     NAU7802Status getWeightSensorStatus() const;
     
@@ -100,6 +101,7 @@ private:
     mutable NAU7802Sensor weightSensor;
     float currentWeight;
     long currentRawWeight;
+    float fuelGallons;  // Calculated fuel volume in gallons
     unsigned long lastWeightRead;
     
     // INA219 Power Monitor Sensor

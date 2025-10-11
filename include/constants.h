@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Arduino.h>
+#include "arduino_secrets.h"
 
 // System Constants
 const unsigned long WATCHDOG_TIMEOUT_MS = 15000;
 const unsigned long MAIN_LOOP_TIMEOUT_MS = 10000;
 
-// Network Constants
-const char* const BROKER_HOST = "159.203.138.46";
-const int BROKER_PORT = 1883;
+// Network Constants (broker host/port from arduino_secrets.h)
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
 const unsigned long WIFI_CONNECT_CHECK_INTERVAL_MS = 500;
 const unsigned long MQTT_RECONNECT_INTERVAL_MS = 5000;
@@ -17,9 +16,7 @@ const uint8_t MAX_CONNECT_RETRIES = 3;
 const uint8_t MAX_WIFI_RETRIES = 3;
 const uint8_t MAX_MQTT_RETRIES = 3;
 
-// Syslog Constants
-const char* const SYSLOG_SERVER = "192.168.1.113";  // Default rsyslog server IP
-const int SYSLOG_PORT = 514;                        // Standard syslog UDP port
+// Syslog Constants (hostname, tag, facility from arduino_secrets.h for server/port)
 const char* const SYSLOG_HOSTNAME = "LogMonitor";   // Hostname for syslog messages
 const char* const SYSLOG_TAG = "logmonitor";        // Application tag for syslog
 const int SYSLOG_FACILITY = 16;                     // Local use facility (local0 = 16)

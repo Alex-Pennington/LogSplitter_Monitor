@@ -277,6 +277,35 @@ void CommandProcessor::handleSet(char* param, char* value, char* response, size_
             snprintf(response, responseSize, "Network manager not available");
         }
     }
+    else if (strcasecmp(param, "mqtt") == 0) {
+        if (networkManager) {
+            // Parse MQTT broker address and optional port
+            char valueCopy[128];
+            strncpy(valueCopy, value, sizeof(valueCopy) - 1);
+            valueCopy[sizeof(valueCopy) - 1] = '\0';
+            
+            char* portPtr = strchr(valueCopy, ':');
+            int port = 1883; // Default MQTT port
+            
+            if (portPtr) {
+                *portPtr = '\0'; // Split the string
+                port = atoi(portPtr + 1);
+                if (port <= 0 || port > 65535) {
+                    snprintf(response, responseSize, "Invalid port number");
+                    return;
+                }
+            }
+            
+            networkManager->setMQTTBroker(valueCopy, port);
+            if (portPtr) {
+                snprintf(response, responseSize, "mqtt broker set to %s:%d", valueCopy, port);
+            } else {
+                snprintf(response, responseSize, "mqtt broker set to %s:%d", valueCopy, port);
+            }
+        } else {
+            snprintf(response, responseSize, "Network manager not available");
+        }
+    }
     else if (strcasecmp(param, "interval") == 0) {
         unsigned long interval = strtoul(value, NULL, 10);
         if (interval >= 1000 && interval <= 300000) { // 1 second to 5 minutes
@@ -948,9 +977,9 @@ void CommandProcessor::handleLCD(char* param, char* value, char* response, size_
             
             float localTempF = monitorSystem->getLocalTemperatureF();
             float remoteTempF = monitorSystem->getRemoteTemperatureF();
-            float weight = monitorSystem->getWeight();
+            float fuelGallons = monitorSystem->getFuelGallons();
             
-            g_lcdDisplay->updateSensorReadings(localTempF, weight, remoteTempF);
+            g_lcdDisplay->updateSensorReadings(localTempF, fuelGallons, remoteTempF);
             
             float voltage = monitorSystem->getBusVoltage();
             float current = monitorSystem->getCurrent();
@@ -958,7 +987,7 @@ void CommandProcessor::handleLCD(char* param, char* value, char* response, size_
             
             g_lcdDisplay->updateAdditionalSensors(voltage, current, adcVoltage);
             
-            snprintf(response, responseSize, "LCD refreshed: W=%.1f T=%.1fF", weight, localTempF);
+            snprintf(response, responseSize, "LCD refreshed: F=%.1fgal T=%.1fF", fuelGallons, localTempF);
         } else {
             snprintf(response, responseSize, "Monitor system not available");
         }

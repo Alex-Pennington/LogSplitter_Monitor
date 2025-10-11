@@ -66,7 +66,7 @@ public:
      * @param weight Weight reading
      * @param remoteTemp Remote temperature in Celsius (optional)
      */
-    void updateSensorReadings(float localTemp, float weight, float remoteTemp = -999.0);
+    void updateSensorReadings(float localTemp, float fuelGallons, float remoteTemp = -999.0);
     
     /**
      * Update additional sensor data (power, ADC) on line 4

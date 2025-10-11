@@ -71,12 +71,12 @@ void NetworkManager::startMQTTConnection() {
     if (mqttState == MQTTState::CONNECTING || wifiState != WiFiState::CONNECTED) return;
     
     mqttState = MQTTState::CONNECTING;
-    debugPrintf("NetworkManager: Connecting to MQTT broker: %s:%d\n", BROKER_HOST, BROKER_PORT);
+    debugPrintf("NetworkManager: Connecting to MQTT broker: %s:%d\n", MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     
     mqttClient.setId("LogMonitor");
     mqttClient.setUsernamePassword(MQTT_USER, MQTT_PASS);
     
-    if (mqttClient.connect(BROKER_HOST, BROKER_PORT)) {
+    if (mqttClient.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT)) {
         mqttState = MQTTState::CONNECTED;
         debugPrintf("NetworkManager: MQTT connected successfully\n");
         
@@ -295,6 +295,11 @@ void NetworkManager::setSyslogServer(const char* server, int port) {
     syslogServer[sizeof(syslogServer) - 1] = '\0';
     syslogPort = port;
     debugPrintf("NetworkManager: Syslog server set to %s:%d\n", syslogServer, syslogPort);
+}
+
+void NetworkManager::setMQTTBroker(const char* broker, int port) {
+    // Use reconfigureMQTT with empty username/password to update broker
+    reconfigureMQTT(broker, port, "", "");
 }
 
 bool NetworkManager::reconfigureMQTT(const char* brokerHost, int brokerPort, const char* username, const char* password) {

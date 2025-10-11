@@ -145,7 +145,7 @@ void LCDDisplay::updateNetworkStatus(bool wifiConnected, bool mqttConnected, con
     // Keeping for compatibility but functionality moved to updateTemperatureReadings
 }
 
-void LCDDisplay::updateSensorReadings(float localTemp, float weight, float remoteTemp) {
+void LCDDisplay::updateSensorReadings(float localTemp, float fuelGallons, float remoteTemp) {
     if (!initialized || !displayEnabled) return;
     
     // Line 2: System Temperature (remote/thermocouple only)
@@ -162,23 +162,19 @@ void LCDDisplay::updateSensorReadings(float localTemp, float weight, float remot
     
     updateLineIfChanged(1, tempContent, line2Content);
     
-    // Line 3: Weight reading
-    String weightContent = "Weight: ";
-    if (weight >= 0) {
-        if (weight < 1000) {
-            weightContent += String(weight, 1) + "g";
-        } else {
-            weightContent += String(weight/1000.0, 2) + "kg";
-        }
+    // Line 3: Fuel reading in gallons
+    String fuelContent = "FUEL: ";
+    if (fuelGallons >= 0) {
+        fuelContent += String(fuelGallons, 1) + " Gal";
     } else {
-        weightContent += "---";
+        fuelContent += "--- Gal";
     }
     
     // Pad or truncate to exactly 20 characters
-    while (weightContent.length() < 20) weightContent += " ";
-    if (weightContent.length() > 20) weightContent = weightContent.substring(0, 20);
+    while (fuelContent.length() < 20) fuelContent += " ";
+    if (fuelContent.length() > 20) fuelContent = fuelContent.substring(0, 20);
     
-    updateLineIfChanged(2, weightContent, line3Content);
+    updateLineIfChanged(2, fuelContent, line3Content);
 }
 
 void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adcVoltage) {

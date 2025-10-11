@@ -20,6 +20,7 @@ MonitorSystem::MonitorSystem() :
     lastTemperatureRead(0),
     currentWeight(0.0),
     currentRawWeight(0),
+    fuelGallons(0.0),
     lastWeightRead(0),
     currentVoltage(0.0),
     currentCurrent(0.0),
@@ -376,6 +377,15 @@ void MonitorSystem::readWeightSensor() {
         currentRawWeight = weightSensor.getRawReading();
         currentWeight = weightSensor.getFilteredWeight();
         
+        // Calculate fuel gallons: (weight_in_kg - 9.2kg) / 3.0 kg/gal
+        // Weight sensor returns grams, so convert to kg first
+        float weightInKg = currentWeight / 1000.0;  // Convert grams to kilograms
+        fuelGallons = (weightInKg - 9.2) / 3.0;
+        // Ensure non-negative value (can't have negative fuel)
+        if (fuelGallons < 0.0) {
+            fuelGallons = 0.0;
+        }
+        
         // Publish weight data to MQTT
         if (g_networkManager && g_networkManager->isMQTTConnected()) {
             char valueBuffer[16];
@@ -387,6 +397,10 @@ void MonitorSystem::readWeightSensor() {
             // Publish raw reading
             snprintf(valueBuffer, sizeof(valueBuffer), "%ld", currentRawWeight);
             g_networkManager->publish(TOPIC_NAU7802_RAW, valueBuffer);
+            
+            // Publish fuel gallons
+            snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", fuelGallons);
+            g_networkManager->publish("monitor/fuel/gallons", valueBuffer);
             
             // Publish comprehensive weight sensor status
             char statusBuffer[128];
@@ -583,11 +597,11 @@ float MonitorSystem::getRemoteTemperature() const {
 }
 
 float MonitorSystem::getLocalTemperatureF() const {
-    return temperatureSensor.getLocalTemperatureF();
+    return (localTemperature * 9.0 / 5.0) + 32.0;
 }
 
 float MonitorSystem::getRemoteTemperatureF() const {
-    return temperatureSensor.getRemoteTemperatureF();
+    return (remoteTemperature * 9.0 / 5.0) + 32.0;
 }
 
 float MonitorSystem::getHumidity() const {
@@ -688,6 +702,10 @@ float MonitorSystem::getFilteredWeight() {
 
 long MonitorSystem::getRawWeight() const {
     return currentRawWeight;
+}
+
+float MonitorSystem::getFuelGallons() const {
+    return fuelGallons;
 }
 
 bool MonitorSystem::isWeightSensorReady() {
@@ -838,13 +856,13 @@ void MonitorSystem::updateLCDDisplay() {
     unsigned long uptime = getUptime();
     g_lcdDisplay->updateSystemStatus(currentState, uptime, wifiConnected, mqttConnected, syslogWorking);
     
-    // Update sensor readings (lines 2-3) - Show MCP9600 temperatures in Fahrenheit and weight
+    // Update sensor readings (lines 2-3) - Show MCP9600 temperatures in Fahrenheit and fuel gallons
     // Use temperature values directly - sensor availability checked during sensor reads
     float displayLocalTempF = (localTemperature > -100.0) ? 
                                (localTemperature * 9.0 / 5.0) + 32.0 : -999.0;
     float displayRemoteTempF = (remoteTemperature > -100.0) ? 
                                (remoteTemperature * 9.0 / 5.0) + 32.0 : -999.0;
-    g_lcdDisplay->updateSensorReadings(displayLocalTempF, currentWeight, displayRemoteTempF);
+    g_lcdDisplay->updateSensorReadings(displayLocalTempF, fuelGallons, displayRemoteTempF);
     
     // Update additional sensor data (line 4) - Power and ADC sensors
     g_lcdDisplay->updateAdditionalSensors(currentVoltage, currentCurrent, currentAdcVoltage);

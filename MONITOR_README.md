@@ -17,11 +17,18 @@ The LogSplitter Monitor is a companion system to the LogSplitter Controller, des
 - **MQTT Integration**: Publishes monitoring data and receives commands
 - **Syslog Logging**: Sends all debug output to centralized rsyslog server (192.168.1.238:514)
 - **Hostname**: Automatically sets hostname to "LogMonitor" for easy identification
+- **HTTP Web Interface**: Full-featured web dashboard on port 80 with REST API
 
 ### Telnet Server
 - **Remote Access**: Telnet server on port 23 for remote command execution
 - **Interactive Commands**: Full command-line interface for monitoring and control
 - **Real-time Response**: Live command execution with immediate feedback
+
+### HTTP Web Interface
+- **Web Dashboard**: Modern responsive web interface accessible at `http://<monitor-ip>`
+- **Real-time Updates**: Auto-refreshing sensor data every 5 seconds
+- **REST API**: JSON API endpoints for integration with other systems
+- **Remote Control**: Execute commands and control outputs via web interface
 
 ### Monitoring Capabilities
 - **Weight Sensing**: Precision 24-bit NAU7802 ADC with load cell support
@@ -102,6 +109,146 @@ r4/monitor/control       - Command input topic
 ```
 r4/monitor/control/resp  - Command responses
 ```
+
+## HTTP Web Interface
+
+### Access
+Open a web browser and navigate to:
+```
+http://<monitor_ip>
+```
+
+The web dashboard provides:
+- Real-time sensor data visualization
+- System status monitoring
+- Interactive controls for weight tare and sensor testing
+- Auto-refreshing display (every 5 seconds)
+
+### REST API Endpoints
+
+All API endpoints return JSON data. Base URL: `http://<monitor_ip>/api/`
+
+#### GET /api/status
+Complete system status including all sensors and network state.
+
+**Response:**
+```json
+{
+  "weight": 45.23,
+  "fuel": 12.45,
+  "tempLocal": 72.5,
+  "tempRemote": 68.2,
+  "voltage": 12.3,
+  "current": 150.5,
+  "uptime": 123456,
+  "memory": 24567,
+  "wifi": true,
+  "mqtt": true
+}
+```
+
+#### GET /api/sensors
+Detailed sensor readings.
+
+**Response:**
+```json
+{
+  "weight": 45.23,
+  "fuel": 12.45,
+  "temperature": {
+    "local": 72.5,
+    "remote": 68.2
+  },
+  "power": {
+    "voltage": 12.3,
+    "current": 150.5,
+    "power": 1.85
+  },
+  "adc": 3.456
+}
+```
+
+#### GET /api/weight
+Weight sensor specific data.
+
+**Response:**
+```json
+{
+  "weight": 45.23,
+  "raw": 123456,
+  "fuel": 12.45,
+  "ready": true
+}
+```
+
+#### GET /api/temperature
+Temperature sensor data (both local and remote).
+
+**Response:**
+```json
+{
+  "local": {
+    "celsius": 22.5,
+    "fahrenheit": 72.5
+  },
+  "remote": {
+    "celsius": 20.1,
+    "fahrenheit": 68.2
+  },
+  "ready": true
+}
+```
+
+#### GET /api/network
+Network connectivity status.
+
+**Response:**
+```json
+{
+  "wifi": true,
+  "mqtt": true,
+  "ip": "192.168.1.101",
+  "uptime": 123456
+}
+```
+
+#### GET /api/system
+System state and resource usage.
+
+**Response:**
+```json
+{
+  "state": "MONITORING",
+  "uptime": 123456,
+  "freeMemory": 24567
+}
+```
+
+#### POST /api/command
+Execute a command remotely.
+
+**Request:**
+```json
+{
+  "command": "weight tare"
+}
+```
+
+**Response:**
+```json
+{
+  "result": "Command 'weight tare' received",
+  "success": true
+}
+```
+
+**Available Commands:**
+- `weight tare` - Tare the weight sensor
+- `weight zero` - Zero calibration
+- `test sensors` - Test all sensors
+- `test network` - Test network connectivity
+- `lcd on` - Turn on LCD display
+- `lcd off` - Turn off LCD display
 
 ## Telnet Commands
 

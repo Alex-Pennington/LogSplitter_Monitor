@@ -64,6 +64,8 @@ public:
     float getRemoteTemperature();
     float getLocalTemperatureExtended();
     float getRemoteTemperatureExtended();
+    float getLocalTemperatureF();
+    float getRemoteTemperatureF();
     
     // Configuration
     bool setConversionRate(uint8_t rate);

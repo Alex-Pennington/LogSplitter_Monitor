@@ -140,6 +140,14 @@ float MAX6656Sensor::getRemoteTemperatureExtended() {
     return convertTemperature(tempReg, extReg) + remoteTempOffset;
 }
 
+float MAX6656Sensor::getLocalTemperatureF() {
+    return getLocalTemperature() * 9.0 / 5.0 + 32.0;
+}
+
+float MAX6656Sensor::getRemoteTemperatureF() {
+    return getRemoteTemperature() * 9.0 / 5.0 + 32.0;
+}
+
 bool MAX6656Sensor::setConversionRate(uint8_t rate) {
     if (!initialized || rate > 7) return false;
     

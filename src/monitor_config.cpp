@@ -82,14 +82,14 @@ void MonitorConfigManager::setDefaults() {
     // Set magic number
     config.magic = MONITOR_CONFIG_MAGIC;
     
-    // Syslog Configuration (from constants.h)
+    // Syslog Configuration (from arduino_secrets.h)
     strncpy(config.syslogServer, SYSLOG_SERVER, sizeof(config.syslogServer) - 1);
     config.syslogPort = SYSLOG_PORT;
     strncpy(config.syslogHostname, SYSLOG_HOSTNAME, sizeof(config.syslogHostname) - 1);
     
-    // MQTT Configuration (from constants.h)
-    strncpy(config.mqttBroker, BROKER_HOST, sizeof(config.mqttBroker) - 1);
-    config.mqttPort = BROKER_PORT;
+    // MQTT Configuration (from arduino_secrets.h)
+    strncpy(config.mqttBroker, MQTT_BROKER_HOST, sizeof(config.mqttBroker) - 1);
+    config.mqttPort = MQTT_BROKER_PORT;
     strcpy(config.mqttUsername, "");  // Empty by default
     strcpy(config.mqttPassword, "");  // Empty by default
     
