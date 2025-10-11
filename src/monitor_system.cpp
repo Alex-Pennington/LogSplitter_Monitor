@@ -543,14 +543,13 @@ void MonitorSystem::publishStatus() {
     // Publish MCP9600 local temperature (in Fahrenheit)
     float localTempF = (localTemperature * 9.0 / 5.0) + 32.0;
     snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", localTempF);
-    g_networkManager->publish(TOPIC_SENSOR_TEMPERATURE, valueBuffer);
+    g_networkManager->publish(TOPIC_SENSOR_TEMPERATURE, valueBuffer);  // Backward compatibility
+    g_networkManager->publish(TOPIC_SENSOR_TEMPERATURE_LOCAL, valueBuffer);  // Explicit local topic
     
-    // Publish MCP9600 remote temperature if available (in Fahrenheit)
-    if (temperatureSensor.isAvailable()) {
-        float remoteTempF = (remoteTemperature * 9.0 / 5.0) + 32.0;
-        snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", remoteTempF);
-        g_networkManager->publish("r4/monitor/temperature/remote", valueBuffer);
-    }
+    // Publish MCP9600 remote temperature (in Fahrenheit)
+    float remoteTempF = (remoteTemperature * 9.0 / 5.0) + 32.0;
+    snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", remoteTempF);
+    g_networkManager->publish(TOPIC_SENSOR_TEMPERATURE_REMOTE, valueBuffer);
     
     snprintf(valueBuffer, sizeof(valueBuffer), "%lu", getUptime());
     g_networkManager->publish(TOPIC_SYSTEM_UPTIME, valueBuffer);

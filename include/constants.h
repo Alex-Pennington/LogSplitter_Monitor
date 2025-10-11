@@ -32,6 +32,8 @@ const char TOPIC_MONITOR_ERROR[] PROGMEM = "monitor/error";
 
 // Monitor-specific Topics
 const char TOPIC_SENSOR_TEMPERATURE[] PROGMEM = "monitor/temperature";
+const char TOPIC_SENSOR_TEMPERATURE_LOCAL[] PROGMEM = "monitor/temperature/local";
+const char TOPIC_SENSOR_TEMPERATURE_REMOTE[] PROGMEM = "monitor/temperature/remote";
 const char TOPIC_SENSOR_HUMIDITY[] PROGMEM = "monitor/humidity";
 const char TOPIC_SENSOR_VOLTAGE[] PROGMEM = "monitor/voltage";
 const char TOPIC_SYSTEM_UPTIME[] PROGMEM = "monitor/uptime";

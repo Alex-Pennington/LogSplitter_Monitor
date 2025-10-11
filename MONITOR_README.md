@@ -87,9 +87,9 @@ All I2C devices use **Wire1** (Qwiic connector) for consistency and proper Ardui
 ```
 r4/monitor/status        - Comprehensive system status
 r4/monitor/heartbeat     - Periodic heartbeat with uptime
-r4/monitor/temperature   - Temperature sensor reading (°C) - Local sensor
-r4/monitor/temperature/local   - Local temperature from MAX6656 (°C)
-r4/monitor/temperature/remote  - Remote temperature from MAX6656 (°C)
+r4/monitor/temperature   - Temperature sensor reading (°F) - Local/Ambient (backward compatibility)
+r4/monitor/temperature/local   - Local/Ambient temperature from MCP9600 (°F)
+r4/monitor/temperature/remote  - Remote/Thermocouple temperature from MCP9600 (°F)
 r4/monitor/voltage       - Voltage monitoring (V)
 r4/monitor/weight        - Weight readings (calibrated)
 r4/monitor/weight/raw    - Raw ADC values from NAU7802
