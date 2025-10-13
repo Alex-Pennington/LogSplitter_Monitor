@@ -303,28 +303,54 @@ void MonitorSystem::readTemperatureSensor() {
             float newRemoteTemp = temperatureSensor.getRemoteTemperature();
             
             // Static variables to track previous temperatures for validation
-            static float lastLocalTemp = newLocalTemp;
-            static float lastRemoteTemp = newRemoteTemp;
+            static float lastLocalTemp = 70.0;  // Initialize to reasonable room temp
+            static float lastRemoteTemp = 70.0;
             static bool firstRead = true;
+            
+            // Simple validation: reject obvious errors (50-200°F range for reasonable readings)
+            const float MIN_VALID_TEMP_F = 50.0;
+            const float MAX_VALID_TEMP_F = 200.0;
+            
+            // Convert Celsius to Fahrenheit for validation
+            float newLocalTempF = (newLocalTemp * 9.0 / 5.0) + 32.0;
+            float newRemoteTempF = (newRemoteTemp * 9.0 / 5.0) + 32.0;
+            
+            bool localValid = (newLocalTempF >= MIN_VALID_TEMP_F && newLocalTempF <= MAX_VALID_TEMP_F);
+            bool remoteValid = (newRemoteTempF >= MIN_VALID_TEMP_F && newRemoteTempF <= MAX_VALID_TEMP_F);
             
             if (!firstRead) {
                 float localChange = newLocalTemp - lastLocalTemp;
                 float remoteChange = newRemoteTemp - lastRemoteTemp;
                 
                 if (tempDebugEnabled) {
-                    debugPrintf("MonitorSystem: Local change: %.3fC (%.1f -> %.1f)\n", localChange, lastLocalTemp, newLocalTemp);
-                    debugPrintf("MonitorSystem: Remote change: %.3fC (%.1f -> %.1f)\n", remoteChange, lastRemoteTemp, newRemoteTemp);
+                    debugPrintf("MonitorSystem: Local: %.1fC (%.1fF) valid=%s change=%.3fC\n", 
+                               newLocalTemp, newLocalTempF, localValid ? "YES" : "NO", localChange);
+                    debugPrintf("MonitorSystem: Remote: %.1fC (%.1fF) valid=%s change=%.3fC\n", 
+                               newRemoteTemp, newRemoteTempF, remoteValid ? "YES" : "NO", remoteChange);
                 }
                 
-                // Rate limiting: reject readings with unreasonable changes (>20C/second for thermocouple)
-                if (abs(localChange) > 20.0 && newLocalTemp > -990.0) {
+                // Reject readings outside valid temperature range
+                if (!localValid) {
+                    temperatureSensorFailures++;
+                    LOG_WARN("Temperature rejected: Local %.1fF out of range (keeping %.1fF)", 
+                            newLocalTempF, (lastLocalTemp * 9.0 / 5.0) + 32.0);
+                    newLocalTemp = lastLocalTemp; // Keep previous value
+                } else if (abs(localChange) > 20.0) {
+                    // Rate limiting: reject readings with unreasonable changes (>20C/second)
+                    temperatureSensorFailures++;
                     if (tempDebugEnabled) {
                         debugPrintf("MonitorSystem: *** REJECTED local temp jump: %.1fC ***\n", localChange);
                     }
                     newLocalTemp = lastLocalTemp; // Keep previous value
+                } else {
+                    temperatureSensorFailures = 0;  // Reset on good reading
                 }
                 
-                if (abs(remoteChange) > 20.0 && newRemoteTemp > -990.0) {
+                if (!remoteValid) {
+                    LOG_WARN("Temperature rejected: Remote %.1fF out of range (keeping %.1fF)", 
+                            newRemoteTempF, (lastRemoteTemp * 9.0 / 5.0) + 32.0);
+                    newRemoteTemp = lastRemoteTemp; // Keep previous value
+                } else if (abs(remoteChange) > 20.0) {
                     if (tempDebugEnabled) {
                         debugPrintf("MonitorSystem: *** REJECTED remote temp jump: %.1fC ***\n", remoteChange);
                     }
@@ -332,17 +358,26 @@ void MonitorSystem::readTemperatureSensor() {
                 }
             } else {
                 if (tempDebugEnabled) {
-                    debugPrintf("MonitorSystem: First temperature reading\n");
+                    debugPrintf("MonitorSystem: First temperature reading - Local: %.1fF Remote: %.1fF\n", 
+                               newLocalTempF, newRemoteTempF);
+                }
+                
+                // On first read, validate but don't reject - just log
+                if (!localValid) {
+                    LOG_WARN("Temperature: First local reading out of range: %.1fF", newLocalTempF);
+                }
+                if (!remoteValid) {
+                    LOG_WARN("Temperature: First remote reading out of range: %.1fF", newRemoteTempF);
                 }
             }
             
             // Only update if readings are reasonable
-            if (newLocalTemp > -990.0) {
+            if (localValid || firstRead) {
                 localTemperature = newLocalTemp;
                 lastLocalTemp = newLocalTemp;
             }
             
-            if (newRemoteTemp > -990.0) {
+            if (remoteValid || firstRead) {
                 remoteTemperature = newRemoteTemp;
                 lastRemoteTemp = newRemoteTemp;
             }
