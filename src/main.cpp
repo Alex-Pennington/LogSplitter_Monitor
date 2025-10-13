@@ -3,7 +3,6 @@
 #include "constants.h"
 #include "network_manager.h"
 #include "telnet_server.h"
-#include "http_server.h"
 #include "monitor_system.h"
 #include "command_processor.h"
 #include "lcd_display.h"
@@ -13,7 +12,6 @@
 // Global instances
 NetworkManager networkManager;
 TelnetServer telnetServer;
-HTTPServer httpServer;
 MonitorSystem monitorSystem;
 CommandProcessor commandProcessor;
 LCDDisplay lcdDisplay;
@@ -87,11 +85,6 @@ void setup() {
     networkManager.setHostname("LogMonitor");
     telnetServer.setConnectionInfo("LogMonitor", "1.0.0");
     
-    // Initialize HTTP server
-    httpServer.setMonitorSystem(&monitorSystem);
-    httpServer.setNetworkManager(&networkManager);
-    httpServer.setCommandProcessor(&commandProcessor);
-    
     debugPrintf("Network initialization complete\n");
     currentSystemState = SYS_CONNECTING;
     
@@ -164,13 +157,9 @@ void loop() {
     // Start telnet server once network is connected
     if (networkManager.isWiFiConnected() && currentSystemState == SYS_CONNECTING) {
         telnetServer.begin(23);
-        httpServer.begin(80);  // Start HTTP server on port 80
         currentSystemState = SYS_MONITORING;
         
         debugPrintf("Telnet server started\n");
-        debugPrintf("HTTP server started on port 80\n");
-        Serial.print("HTTP server: http://");
-        Serial.println(WiFi.localIP());
     }
     
     // Update monitor system (only if sensors are initialized)
@@ -181,8 +170,6 @@ void loop() {
     // Update telnet server
     if (networkManager.isWiFiConnected()) {
         telnetServer.update();
-        httpServer.update();  // Update HTTP server
-        
         // Process telnet commands
         if (telnetServer.isConnected()) {
             String command = telnetServer.readLine();

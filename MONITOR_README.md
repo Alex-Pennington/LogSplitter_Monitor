@@ -4,6 +4,8 @@
 
 The LogSplitter Monitor is a companion system to the LogSplitter Controller, designed to provide remote monitoring, data collection, and visual feedback capabilities. It features integrated NAU7802 precision weight sensing for load monitoring, LCD display for real-time status, and LED matrix heartbeat animation for visual system health indication. The Monitor connects to the same network infrastructure and logs to the same rsyslog server for centralized monitoring.
 
+> **Note**: A version with HTTP web server and REST API is available in the `feature/http-server` branch. The main branch is optimized for production use with MQTT and telnet interfaces.
+
 ## Features
 
 ### Visual Display Systems
@@ -17,26 +19,20 @@ The LogSplitter Monitor is a companion system to the LogSplitter Controller, des
 - **MQTT Integration**: Publishes monitoring data and receives commands
 - **Syslog Logging**: Sends all debug output to centralized rsyslog server (192.168.1.238:514)
 - **Hostname**: Automatically sets hostname to "LogMonitor" for easy identification
-- **HTTP Web Interface**: Full-featured web dashboard on port 80 with REST API
+- **Telnet Server**: Command-line interface on port 23 for remote administration
 
 ### Telnet Server
 - **Remote Access**: Telnet server on port 23 for remote command execution
 - **Interactive Commands**: Full command-line interface for monitoring and control
 - **Real-time Response**: Live command execution with immediate feedback
 
-### HTTP Web Interface
-- **Web Dashboard**: Modern responsive web interface accessible at `http://<monitor-ip>`
-- **Real-time Updates**: Auto-refreshing sensor data every 5 seconds
-- **REST API**: JSON API endpoints for integration with other systems
-- **Remote Control**: Execute commands and control outputs via web interface
-
 ### Monitoring Capabilities
 - **Weight Sensing**: Precision 24-bit NAU7802 ADC with load cell support
-- **Temperature Monitoring**: MAX6656 I2C temperature sensor with local and remote sensing
+- **Temperature Monitoring**: MCP9600 I2C thermocouple sensor with local and remote sensing
 - **LCD Display**: 20x4 character LCD with real-time system status display
 - **Sensor Reading**: Temperature, voltage, and digital input monitoring
 - **Weight Calibration**: Zero-point and scale calibration with EEPROM persistence
-- **Temperature Filtering**: Advanced filtering for stable temperature readings
+- **Temperature Validation**: Automatic rejection of invalid readings (50-200°F range)
 - **System Health**: Memory usage, uptime, and connection status tracking
 - **Data Publishing**: Automated MQTT publishing of sensor data and system status
 - **Status LED**: Visual indication of system state
@@ -110,145 +106,7 @@ r4/monitor/control       - Command input topic
 r4/monitor/control/resp  - Command responses
 ```
 
-## HTTP Web Interface
-
-### Access
-Open a web browser and navigate to:
-```
-http://<monitor_ip>
-```
-
-The web dashboard provides:
-- Real-time sensor data visualization
-- System status monitoring
-- Interactive controls for weight tare and sensor testing
-- Auto-refreshing display (every 5 seconds)
-
-### REST API Endpoints
-
-All API endpoints return JSON data. Base URL: `http://<monitor_ip>/api/`
-
-#### GET /api/status
-Complete system status including all sensors and network state.
-
-**Response:**
-```json
-{
-  "weight": 45.23,
-  "fuel": 12.45,
-  "tempLocal": 72.5,
-  "tempRemote": 68.2,
-  "voltage": 12.3,
-  "current": 150.5,
-  "uptime": 123456,
-  "memory": 24567,
-  "wifi": true,
-  "mqtt": true
-}
-```
-
-#### GET /api/sensors
-Detailed sensor readings.
-
-**Response:**
-```json
-{
-  "weight": 45.23,
-  "fuel": 12.45,
-  "temperature": {
-    "local": 72.5,
-    "remote": 68.2
-  },
-  "power": {
-    "voltage": 12.3,
-    "current": 150.5,
-    "power": 1.85
-  },
-  "adc": 3.456
-}
-```
-
-#### GET /api/weight
-Weight sensor specific data.
-
-**Response:**
-```json
-{
-  "weight": 45.23,
-  "raw": 123456,
-  "fuel": 12.45,
-  "ready": true
-}
-```
-
-#### GET /api/temperature
-Temperature sensor data (both local and remote).
-
-**Response:**
-```json
-{
-  "local": {
-    "celsius": 22.5,
-    "fahrenheit": 72.5
-  },
-  "remote": {
-    "celsius": 20.1,
-    "fahrenheit": 68.2
-  },
-  "ready": true
-}
-```
-
-#### GET /api/network
-Network connectivity status.
-
-**Response:**
-```json
-{
-  "wifi": true,
-  "mqtt": true,
-  "ip": "192.168.1.101",
-  "uptime": 123456
-}
-```
-
-#### GET /api/system
-System state and resource usage.
-
-**Response:**
-```json
-{
-  "state": "MONITORING",
-  "uptime": 123456,
-  "freeMemory": 24567
-}
-```
-
-#### POST /api/command
-Execute a command remotely.
-
-**Request:**
-```json
-{
-  "command": "weight tare"
-}
-```
-
-**Response:**
-```json
-{
-  "result": "Command 'weight tare' received",
-  "success": true
-}
-```
-
-**Available Commands:**
-- `weight tare` - Tare the weight sensor
-- `weight zero` - Zero calibration
-- `test sensors` - Test all sensors
-- `test network` - Test network connectivity
-- `lcd on` - Turn on LCD display
-- `lcd off` - Turn off LCD display
+> **HTTP Web Interface**: A version with full HTTP web server, REST API, and web dashboard is available in the `feature/http-server` branch. See [HTTP_SERVER_INTEGRATION.md](HTTP_SERVER_INTEGRATION.md) for details.
 
 ## Telnet Commands
 
@@ -440,11 +298,17 @@ pio device monitor
 
 ## Memory Usage
 
-**Current Build Statistics:**
+**Current Build Statistics (Production - No HTTP):**
 - **Platform**: Arduino UNO R4 WiFi
-- **Memory**: Optimized for embedded operation
+- **RAM**: 32.6% (10,668 bytes / 32,768 bytes)
+- **Flash**: 49.6% (129,964 bytes / 262,144 bytes)
+- **Optimization**: Streamlined for production operation
 - **Shared Buffers**: Efficient memory management
 - **Real-time Operation**: Non-blocking network operations
+
+> **Note**: The `feature/http-server` branch with HTTP web interface uses:
+> - RAM: 32.7% (10,700 bytes) - 32 bytes more
+> - Flash: 54.4% (142,720 bytes) - 12.5 KB more
 
 ## Development
 

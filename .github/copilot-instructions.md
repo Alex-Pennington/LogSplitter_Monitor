@@ -4,6 +4,7 @@
 - **LogSplitter_Monitor** is a unified industrial control and monitoring system for Arduino UNO R4 WiFi, managing both a Controller and a Monitor unit.
 - The codebase is split into two main firmware targets: Controller (root) and Monitor (`monitor/`). Shared code is in `shared/`.
 - All commands, logging, and diagnostics are accessible via Telnet, MQTT, and Serial interfaces.
+- **HTTP Server**: An optional HTTP web interface is available in the `feature/http-server` branch. Main branch is production-optimized without HTTP.
 
 ## Architecture & Key Components
 - **Controller**: Main industrial logic, relay control, safety, and sequence management. Source: `src/`, headers: `include/`.
@@ -24,9 +25,9 @@
 ## Command Interface & Patterns
 - **Unified Command Set**: Both units support commands like `help`, `show`, `status`, `network`, `loglevel`, `test sensors`, `syslog status`, `reset system`.
 - **Controller-Specific**: `relay R1 ON`, `sequence start`, `set <param> <value>` (see `COMMANDS.md`).
-- **Monitor-Specific**: `weight status`, `temp status`, `set debug on`.
-- **HTTP API**: Monitor provides REST API on port 80 with endpoints: `/api/status`, `/api/sensors`, `/api/weight`, `/api/temperature`, `/api/network`, `/api/system`, `/api/command` (POST).
-- **Web Dashboard**: Modern responsive web UI at `http://<monitor-ip>` with auto-refresh and interactive controls.
+- **Monitor-Specific**: `weight status`, `temp status`, `set debug on`, `heartbeat on/off`, `heartbeat rate 72`.
+- **Telnet Access**: Both units provide full command interface via telnet on port 23.
+- **MQTT Control**: Commands can be sent via MQTT topics for remote operation.
 - **Logging**: All debug output is sent to syslog (UDP, RFC 3164, see `set syslog <ip>`). No local debug output by default.
 - **Safety**: All relay operations are safety-monitored; see `COMMANDS.md` for error handling and safety feedback.
 
