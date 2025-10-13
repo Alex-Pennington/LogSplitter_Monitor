@@ -41,8 +41,7 @@ NAU7802Status NAU7802Sensor::begin() {
     // Standard system logging (permanent) - goes to syslog
     LOG_INFO("NAU7802: Initializing weight sensor");
     
-    // Initialize I2C on Wire1 for Arduino R4 WiFi Qwiic connector
-    Wire1.begin();
+    // Wire1.begin() should only be called once in main.cpp
     
     // Initialize the NAU7802
     if (!scale.begin(Wire1)) {
@@ -131,74 +130,14 @@ NAU7802Status NAU7802Sensor::calibrateAFE() {
 NAU7802Status NAU7802Sensor::calibrateZero() {
     debugPrintf("NAU7802: Starting zero calibration (ensure no load on sensor)...\n");
     
-    // Give sensor extra time to stabilize before zero calibration
-    debugPrintf("NAU7802: Allowing sensor to stabilize for zero calibration...\n");
-    delay(1000);
+    // Use the library's built-in calculateZeroOffset method
+    // Takes 8 samples over 1000ms and calculates the zero offset
+    scale.calculateZeroOffset(8, 1000);
     
-    // Clear any pending readings
-    while (scale.available()) {
-        scale.getReading();
-        delay(10);
-    }
-    
-    // Wait for sensor to be ready with extended timeout
-    debugPrintf("NAU7802: Waiting for sensor to be ready...\n");
-    unsigned long timeout = millis() + 10000;  // 10 second timeout
-    int readyCount = 0;
-    
-    while (millis() < timeout) {
-        if (scale.available()) {
-            readyCount++;
-            if (readyCount >= 3) {  // Wait for multiple consecutive ready states
-                break;
-            }
-        } else {
-            readyCount = 0;  // Reset count if not ready
-        }
-        delay(50);
-    }
-    
-    if (readyCount < 3) {
-        lastError = NAU7802_NOT_READY;
-        logError(lastError, "calibrateZero - sensor not consistently ready");
-        return lastError;
-    }
-    
-    debugPrintf("NAU7802: Sensor ready, taking calibration readings...\n");
-    
-    // Take average of multiple readings for zero calibration
-    long sum = 0;
-    const uint8_t samples = 50;
-    uint8_t validSamples = 0;
-    
-    for (uint8_t i = 0; i < samples; i++) {
-        // Wait for data to be available
-        unsigned long sampleTimeout = millis() + 1000;
-        while (!scale.available() && millis() < sampleTimeout) {
-            delay(10);
-        }
-        
-        if (scale.available()) {
-            long reading = scale.getReading();
-            sum += reading;
-            validSamples++;
-            debugPrintf("NAU7802: Sample %d: %ld\n", i+1, reading);
-        } else {
-            debugPrintf("NAU7802: Sample %d: timeout\n", i+1);
-        }
-        delay(100); // Wait between readings
-    }
-    
-    if (validSamples < samples / 2) {
-        lastError = NAU7802_CALIBRATION_FAILED;
-        logError(lastError, "calibrateZero - insufficient samples");
-        debugPrintf("NAU7802: Only got %d valid samples out of %d\n", validSamples, samples);
-        return lastError;
-    }
-    
-    zeroOffset = sum / validSamples;
-    debugPrintf("NAU7802: Zero calibration completed, offset=%ld (from %d samples)\n", 
-        zeroOffset, validSamples);
+    // Get the zero offset that was calculated
+    zeroOffset = scale.getZeroOffset();
+    debugPrintf("NAU7802: Zero calibration completed successfully, offset=%ld\n", zeroOffset);
+    LOG_INFO("NAU7802: Zero calibration completed, offset=%ld", zeroOffset);
     
     // Save calibration to EEPROM
     saveCalibration();
@@ -220,91 +159,13 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
         return lastError;
     }
     
-    // Wait for sensor to be ready
-    debugSerial("Waiting for sensor to be ready for scale calibration...\n");
-    unsigned long timeout = millis() + 5000;
-    while (!scale.available() && millis() < timeout) {
-        delay(10);
-    }
+    // Use the library's built-in calculateCalibrationFactor method
+    // This takes multiple readings and calculates the optimal calibration factor
+    // Parameters: weight on scale, number of samples to average, timeout in ms
+    scale.calculateCalibrationFactor(knownWeight, 8, 1000);
     
-    if (!scale.available()) {
-        lastError = NAU7802_NOT_READY;
-        LOG_ERROR("NAU7802: Sensor not ready for calibration after timeout");
-        logError(lastError, "calibrateScale - sensor not ready");
-        return lastError;
-    }
-    
-    // Take multiple readings and average for better accuracy
-    long sum = 0;
-    const uint8_t samples = 20;
-    uint8_t validSamples = 0;
-    
-    debugSerial("Taking %d readings for scale calibration...\n", samples);
-    
-    for (uint8_t i = 0; i < samples; i++) {
-        // Wait for data to be available
-        unsigned long sampleTimeout = millis() + 1000;
-        while (!scale.available() && millis() < sampleTimeout) {
-            delay(10);
-        }
-        
-        if (scale.available()) {
-            long reading = scale.getReading();
-            sum += reading;
-            validSamples++;
-            debugSerial("Scale sample %d: %ld\n", i+1, reading);
-        } else {
-            debugSerial("Scale sample %d: timeout\n", i+1);
-        }
-        delay(50); // Short delay between readings
-    }
-    
-    if (validSamples < samples / 2) {
-        lastError = NAU7802_CALIBRATION_FAILED;
-        LOG_ERROR("NAU7802: Insufficient calibration samples: %d/%d", validSamples, samples);
-        logError(lastError, "calibrateScale - insufficient samples");
-        debugSerial("Only got %d valid samples out of %d\n", validSamples, samples);
-        return lastError;
-    }
-    
-    long rawReading = sum / validSamples;
-    debugSerial("Average raw reading: %ld, zero offset: %ld\n", rawReading, zeroOffset);
-    
-    // Calculate calibration factor
-    float adjustedReading = rawReading - zeroOffset;
-    debugSerial("Calibration calculation details:\n");
-    debugSerial("  Raw reading: %ld\n", rawReading);
-    debugSerial("  Zero offset: %ld\n", zeroOffset);
-    debugSerial("  Adjusted reading: %.2f\n", adjustedReading);
-    debugSerial("  Known weight: %.2f\n", knownWeight);
-    
-    if (abs(adjustedReading) < 10) { // Lower threshold for sensitive load cells
-        lastError = NAU7802_CALIBRATION_FAILED;
-        LOG_ERROR("NAU7802: Calibration failed - adjusted reading %.2f too small", adjustedReading);
-        logError(lastError, "calibrateScale - reading too close to zero");
-        debugSerial("ERROR: Adjusted reading %.2f is too small (< 10)\n", adjustedReading);
-        debugSerial("This suggests zero calibration was not done or failed\n");
-        return lastError;
-    }
-    
-    // Perform the division and check for validity
-    calibrationFactor = knownWeight / adjustedReading;
-    debugSerial("  Calculated factor: %.6f\n", calibrationFactor);
-    
-    // Validate calibration factor
-    if (isnan(calibrationFactor) || isinf(calibrationFactor) || calibrationFactor == 0.0) {
-        lastError = NAU7802_CALIBRATION_FAILED;
-        LOG_ERROR("NAU7802: Invalid calibration factor calculated: %.6f", calibrationFactor);
-        logError(lastError, "calibrateScale - invalid calibration factor calculated");
-        debugSerial("ERROR: Invalid calibration factor %.6f\n", calibrationFactor);
-        debugSerial("NaN check: %s, Inf check: %s, Zero check: %s\n",
-            isnan(calibrationFactor) ? "TRUE" : "FALSE",
-            isinf(calibrationFactor) ? "TRUE" : "FALSE", 
-            (calibrationFactor == 0.0) ? "TRUE" : "FALSE");
-        calibrationFactor = 1.0; // Reset to safe default
-        return lastError;
-    }
-    
+    // Get the calibration factor that was calculated
+    calibrationFactor = scale.getCalibrationFactor();
     isCalibrated = true;
     
     // Standard system logging (permanent)
@@ -312,8 +173,8 @@ NAU7802Status NAU7802Sensor::calibrateScale(float knownWeight) {
     
     // Temporary debugging (troubleshooting)
     debugSerial("Scale calibration completed successfully, factor=%.6f\n", calibrationFactor);
-    debugSerial("Test calculation: %.2f weight -> %.2f result\n", 
-        knownWeight, adjustedReading * calibrationFactor);
+    debugSerial("Test: %.2f weight should read as %.2f\n", 
+        knownWeight, scale.getWeight());
     
     // Save calibration to EEPROM
     saveCalibration();
@@ -334,6 +195,9 @@ void NAU7802Sensor::setCalibrationFactor(float factor) {
     
     calibrationFactor = factor;
     isCalibrated = (factor != 1.0);
+    
+    // Set the calibration factor in the library
+    scale.setCalibrationFactor(factor);
     
     // Standard system logging (permanent) - goes to syslog
     LOG_INFO("NAU7802: Calibration factor set to %.6f", factor);
@@ -384,7 +248,8 @@ void NAU7802Sensor::updateReading() {
         if (lastRawReading > maxReading) maxReading = lastRawReading;
     }
     
-    lastWeight = applyCalibration(lastRawReading);
+    // Use the library's getWeight() method which applies its internal calibration
+    lastWeight = scale.getWeight();
     
     if (filteringEnabled) {
         updateFilter(lastWeight);
@@ -529,6 +394,10 @@ bool NAU7802Sensor::isPoweredUp() {
 }
 
 bool NAU7802Sensor::saveCalibration() {
+    // Get current calibration values from the library
+    calibrationFactor = scale.getCalibrationFactor();
+    zeroOffset = scale.getZeroOffset();
+    
     NAU7802CalibrationData data;
     data.magic = NAU7802_CALIBRATION_MAGIC;
     data.calibrationFactor = calibrationFactor;
@@ -548,7 +417,8 @@ bool NAU7802Sensor::saveCalibration() {
         EEPROM.write(NAU7802_CALIBRATION_ADDR + i, dataPtr[i]);
     }
     
-    debugPrintf("NAU7802: Calibration saved to EEPROM\n");
+    debugPrintf("NAU7802: Calibration saved to EEPROM (factor=%.6f, offset=%ld)\n", 
+        calibrationFactor, zeroOffset);
     return true;
 }
 
@@ -598,9 +468,16 @@ bool NAU7802Sensor::loadCalibration() {
     } else {
         calibrationFactor = data.calibrationFactor;
         isCalibrated = true;
+        
+        // Set the calibration factor in the library
+        scale.setCalibrationFactor(calibrationFactor);
     }
     
     zeroOffset = data.zeroOffset;
+    
+    // Set the zero offset in the library
+    scale.setZeroOffset(zeroOffset);
+    
     setGain(data.gain);
     setSampleRate(data.sampleRate);
     

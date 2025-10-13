@@ -16,14 +16,8 @@ LCDDisplay::LCDDisplay(uint8_t address, uint8_t cols, uint8_t rows)
 bool LCDDisplay::begin() {
     debugPrintf("LCD: Initializing LCD display at address 0x%02X using Wire1", i2cAddress);
     
-    // Note: Wire1 should already be initialized by main.cpp
-    // Only initialize if not already started (check for first initialization)
-    if (!initialized) {
-        Wire1.begin();
-        delay(50); // Give I2C time to initialize
-    } else {
-        delay(50); // Still wait for multiplexer channel to stabilize
-    }
+    // Wire1.begin() should only be called once in main.cpp
+    delay(50); // Wait for multiplexer channel to stabilize
     
     // Check if device is present first (with retries for reliability)
     int retries = 3;

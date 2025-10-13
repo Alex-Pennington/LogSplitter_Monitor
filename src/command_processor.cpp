@@ -1056,11 +1056,12 @@ void CommandProcessor::handleI2C(char* param, char* response, size_t responseSiz
         // Perform I2C scan on Wire1
         debugPrintf("Starting I2C scan on Wire1...\n");
         
-        // Reinitialize Wire1 to ensure clean state
-        Wire1.end();
-        Wire1.begin();
-        Wire1.setClock(100000); // 100kHz for better compatibility
-        delay(100);
+        // Disable all multiplexer channels first to scan only main bus devices
+        TCA9548A_Multiplexer i2cMux(0x70);
+        if (i2cMux.begin()) {
+            i2cMux.disableAllChannels();
+            delay(50);
+        }
         
         int deviceCount = 0;
         char scanResult[512] = "I2C Scan Results (Wire1):\r\n";

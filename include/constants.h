@@ -106,9 +106,9 @@ enum SystemState {
 };
 
 // Monitoring intervals
-const unsigned long STATUS_PUBLISH_INTERVAL_MS = 10000;  // 10 seconds
+const unsigned long STATUS_PUBLISH_INTERVAL_MS = 30000;  // 30 seconds (also sensor read interval)
 const unsigned long HEARTBEAT_INTERVAL_MS = 30000;       // 30 seconds
-const unsigned long SENSOR_READ_INTERVAL_MS = 5000;      // 5 seconds
+const unsigned long SENSOR_READ_INTERVAL_MS = 30000;     // 30 seconds - unified read and publish
 
 // Command validation
 extern const char* const ALLOWED_COMMANDS[];

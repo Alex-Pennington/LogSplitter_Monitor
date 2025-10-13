@@ -36,6 +36,12 @@ MonitorSystem::MonitorSystem() :
     lastStatusPublish(0),
     lastHeartbeat(0),
     lastSensorAvailable(false),
+    lastHealthCheck(0),
+    temperatureSensorFailures(0),
+    weightSensorFailures(0),
+    powerSensorFailures(0),
+    adcSensorFailures(0),
+    i2cBusError(false),
     i2cMux(0x70) {  // TCA9548A at address 0x70
     
     // Initialize digital I/O states
@@ -155,27 +161,27 @@ void MonitorSystem::initializePins() {
 void MonitorSystem::update() {
     unsigned long now = millis();
     
-    // Read sensors periodically
+    // Perform periodic I2C health check (every 5 minutes)
+    checkI2CHealth();
+    
+    // Read all sensors sequentially with proper delays between each
+    // This prevents I2C multiplexer channel conflicts
     if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
-        readSensors();
-        lastSensorRead = now;
-    }
-    
-    // Read weight sensor at its own interval
-    if (now - lastWeightRead >= NAU7802_READ_INTERVAL_MS) {
+        readSensors();  // Reads temperature sensor
+        delay(20);      // Delay between sensor operations
+        
         readWeightSensor();
-        lastWeightRead = now;
-    }
-    
-    // Read power sensor periodically
-    if (now - lastPowerRead >= 2000) { // Read every 2 seconds
+        delay(20);      // Delay between sensor operations
+        
         readPowerSensor();
-        lastPowerRead = now;
-    }
-    
-    // Read ADC sensor periodically  
-    if (now - lastAdcRead >= 1500) { // Read every 1.5 seconds
+        delay(20);      // Delay between sensor operations
+        
         readAdcSensor();
+        delay(20);      // Delay between sensor operations
+        
+        lastSensorRead = now;
+        lastWeightRead = now;
+        lastPowerRead = now;
         lastAdcRead = now;
     }
     
@@ -242,6 +248,7 @@ void MonitorSystem::readTemperatureSensor() {
     if (now - lastTemperatureRead >= 1000) { // Read every second
         // Select MCP9600 multiplexer channel
         i2cMux.selectChannel(MCP9600_CHANNEL);
+        delay(10); // Allow multiplexer channel to stabilize
         
         bool currentAvailable = temperatureSensor.isAvailable();
         
@@ -250,14 +257,20 @@ void MonitorSystem::readTemperatureSensor() {
             if (currentAvailable) {
                 LOG_INFO("MCP9600 temperature sensor reconnected");
                 debugPrintf("\n=== MCP9600 sensor reconnected ===\n");
+                temperatureSensorFailures = 0;  // Reset failure counter on reconnect
             } else {
-                LOG_CRITICAL("MCP9600 temperature sensor disconnected or failed");
+                temperatureSensorFailures++;
+                LOG_CRITICAL("MCP9600 temperature sensor disconnected or failed (consecutive failures: %d)", 
+                           temperatureSensorFailures);
                 debugPrintf("\n*** CRITICAL - MCP9600 sensor disconnected! ***\n");
             }
             lastSensorAvailable = currentAvailable;
         }
         
         if (currentAvailable) {
+            // Reset failure counter on successful read
+            temperatureSensorFailures = 0;
+            
             // Only show verbose debug if temperature sensor debug is enabled
             bool tempDebugEnabled = temperatureSensor.isDebugEnabled();
             
@@ -324,6 +337,9 @@ void MonitorSystem::readTemperatureSensor() {
             // Sensor not available - use last known values but don't update timestamp
             // This will prevent stale data from being reported as current
         }
+        
+        // Disable multiplexer channel after reading to prevent conflicts
+        i2cMux.disableAllChannels();
     }
 }
 
@@ -356,31 +372,48 @@ void MonitorSystem::readDigitalInputs() {
 void MonitorSystem::readWeightSensor() {
     // Select NAU7802 multiplexer channel
     i2cMux.selectChannel(NAU7802_CHANNEL);
+    delay(10); // Allow multiplexer channel to stabilize
     
     if (!weightSensor.isConnected()) {
         static bool wasConnected = true;  // Track previous state
         if (wasConnected) {
-            LOG_CRITICAL("MonitorSystem: NAU7802 weight sensor disconnected during operation");
+            weightSensorFailures++;
+            LOG_CRITICAL("NAU7802 weight sensor disconnected (consecutive failures: %d)", weightSensorFailures);
             wasConnected = false;
         }
+        i2cMux.disableAllChannels();
         return;
     } else {
         static bool wasConnected = false;  // Track previous state
         if (!wasConnected) {
-            LOG_INFO("MonitorSystem: NAU7802 weight sensor reconnected");
+            LOG_INFO("NAU7802 weight sensor reconnected");
+            weightSensorFailures = 0;  // Reset failure counter
             wasConnected = true;
         }
     }
     
     if (weightSensor.dataAvailable()) {
+        weightSensorFailures = 0;  // Reset on successful read
         weightSensor.updateReading();
         currentRawWeight = weightSensor.getRawReading();
         currentWeight = weightSensor.getFilteredWeight();
         
-        // Calculate fuel gallons: (weight_in_kg - 9.2kg) / 3.0 kg/gal
-        // Weight sensor returns grams, so convert to kg first
+        // Calculate fuel gallons from weight
+        // Current calibration: weight sensor returns grams
+        // Gasoline density: ~2.8 kg/gal (6.17 lbs/gal)
+        // Container tare weight: Need to calibrate/set based on your setup
+        
         float weightInKg = currentWeight / 1000.0;  // Convert grams to kilograms
-        fuelGallons = (weightInKg - 9.2) / 3.0;
+        
+        // Simple calculation: divide total weight by fuel density
+        // Container tare is already accounted for in zero calibration (scale zeroed with empty container)
+        // So the weight reading is the fuel weight directly
+        const float GASOLINE_DENSITY_KG_PER_GAL = 2.8;  // ~6.17 lbs/gal at 15°C
+        
+        // Weight reading is fuel weight (container tare already zeroed out)
+        float fuelWeightKg = weightInKg;
+        fuelGallons = fuelWeightKg / GASOLINE_DENSITY_KG_PER_GAL;
+        
         // Ensure non-negative value (can't have negative fuel)
         if (fuelGallons < 0.0) {
             fuelGallons = 0.0;
@@ -413,6 +446,9 @@ void MonitorSystem::readWeightSensor() {
             g_networkManager->publish(TOPIC_NAU7802_STATUS, statusBuffer);
         }
     }
+    
+    // Disable multiplexer channel after reading to prevent conflicts
+    i2cMux.disableAllChannels();
 }
 
 void MonitorSystem::readPowerSensor() {
@@ -426,11 +462,13 @@ void MonitorSystem::readPowerSensor() {
     
     // Select INA219 multiplexer channel
     i2cMux.selectChannel(INA219_CHANNEL);
+    delay(10); // Allow multiplexer channel to stabilize
     
     debugPrintf("MonitorSystem: Attempting power sensor reading...\n");
     
     // Read power sensor values with error checking
     if (powerSensor.takereading()) {
+        powerSensorFailures = 0;  // Reset on successful read
         currentVoltage = powerSensor.getBusVoltage();
         currentCurrent = powerSensor.getCurrent();
         currentPower = powerSensor.getPower();
@@ -469,18 +507,19 @@ void MonitorSystem::readPowerSensor() {
             debugPrintf("MonitorSystem: MQTT not connected, cannot publish power data\n");
         }
     } else {
-        static uint8_t powerReadErrorCount = 0;
-        powerReadErrorCount++;
+        powerSensorFailures++;
         
-        if (powerReadErrorCount >= 5) {
-            LOG_CRITICAL("MonitorSystem: Power sensor persistent failure (%d consecutive errors)", powerReadErrorCount);
-            powerReadErrorCount = 0;  // Reset counter after critical log
-        } else if (powerReadErrorCount == 1) {
-            LOG_WARN("MonitorSystem: Power sensor reading failed (attempt %d)", powerReadErrorCount);
+        if (powerSensorFailures >= 5) {
+            LOG_CRITICAL("Power sensor persistent failure (consecutive failures: %d)", powerSensorFailures);
+        } else if (powerSensorFailures == 1) {
+            LOG_WARN("Power sensor reading failed (consecutive failures: %d)", powerSensorFailures);
         }
         
         debugPrintf("MonitorSystem: Power sensor reading failed\n");
     }
+    
+    // Disable multiplexer channel after reading to prevent conflicts
+    i2cMux.disableAllChannels();
 }
 
 void MonitorSystem::readAdcSensor() {
@@ -491,9 +530,11 @@ void MonitorSystem::readAdcSensor() {
     
     // Select MCP3421 multiplexer channel
     i2cMux.selectChannel(MCP3421_CHANNEL);
+    delay(10); // Allow multiplexer channel to stabilize
     
     // Take ADC reading with error checking
     if (adcSensor.takeReading()) {
+        adcSensorFailures = 0;  // Reset on successful read
         currentAdcVoltage = adcSensor.getVoltage();
         currentAdcRaw = adcSensor.getRawValue();
         
@@ -520,16 +561,17 @@ void MonitorSystem::readAdcSensor() {
             g_networkManager->publish(TOPIC_MCP3421_STATUS, statusBuffer);
         }
     } else {
-        static uint8_t adcReadErrorCount = 0;
-        adcReadErrorCount++;
+        adcSensorFailures++;
         
-        if (adcReadErrorCount >= 5) {
-            LOG_CRITICAL("MonitorSystem: MCP3421 ADC sensor persistent failure (%d consecutive errors)", adcReadErrorCount);
-            adcReadErrorCount = 0;  // Reset counter after critical log
-        } else if (adcReadErrorCount == 1) {
-            LOG_WARN("MonitorSystem: MCP3421 ADC sensor reading failed (attempt %d)", adcReadErrorCount);
+        if (adcSensorFailures >= 5) {
+            LOG_CRITICAL("MCP3421 ADC sensor persistent failure (consecutive failures: %d)", adcSensorFailures);
+        } else if (adcSensorFailures == 1) {
+            LOG_WARN("MCP3421 ADC sensor reading failed (consecutive failures: %d)", adcSensorFailures);
         }
     }
+    
+    // Disable multiplexer channel after reading to prevent conflicts
+    i2cMux.disableAllChannels();
 }
 
 void MonitorSystem::publishStatus() {
@@ -878,3 +920,125 @@ float MonitorSystem::getWeightScale() const {
 bool MonitorSystem::isWeightCalibrated() const {
     return weightSensor.isReady() && (weightSensor.getCalibrationFactor() != 0.0);
 }
+
+// I2C Health Monitoring Functions
+
+bool MonitorSystem::verifyAllSensorsPresent() {
+    bool allPresent = true;
+    
+    // Check MCP9600 temperature sensor
+    i2cMux.selectChannel(MCP9600_CHANNEL);
+    delay(10);
+    bool tempPresent = temperatureSensor.isAvailable();
+    i2cMux.disableAllChannels();
+    
+    if (!tempPresent) {
+        LOG_ERROR("I2C BUS ERROR: MCP9600 temperature sensor missing on channel %d", MCP9600_CHANNEL);
+        allPresent = false;
+    }
+    
+    // Check NAU7802 weight sensor
+    i2cMux.selectChannel(NAU7802_CHANNEL);
+    delay(10);
+    bool weightPresent = weightSensor.isConnected();
+    i2cMux.disableAllChannels();
+    
+    if (!weightPresent) {
+        LOG_ERROR("I2C BUS ERROR: NAU7802 weight sensor missing on channel %d", NAU7802_CHANNEL);
+        allPresent = false;
+    }
+    
+    // Check INA219 power sensor
+    i2cMux.selectChannel(INA219_CHANNEL);
+    delay(10);
+    bool powerPresent = powerSensorAvailable;  // Use initialization flag
+    i2cMux.disableAllChannels();
+    
+    if (!powerPresent) {
+        LOG_ERROR("I2C BUS ERROR: INA219 power sensor missing on channel %d", INA219_CHANNEL);
+        allPresent = false;
+    }
+    
+    // Check MCP3421 ADC sensor
+    i2cMux.selectChannel(MCP3421_CHANNEL);
+    delay(10);
+    bool adcPresent = adcSensorAvailable;  // Use initialization flag
+    i2cMux.disableAllChannels();
+    
+    if (!adcPresent) {
+        LOG_ERROR("I2C BUS ERROR: MCP3421 ADC sensor missing on channel %d", MCP3421_CHANNEL);
+        allPresent = false;
+    }
+    
+    return allPresent;
+}
+
+void MonitorSystem::checkI2CHealth() {
+    const unsigned long HEALTH_CHECK_INTERVAL = 300000;  // 5 minutes
+    const uint8_t MAX_CONSECUTIVE_FAILURES = 5;
+    
+    unsigned long now = millis();
+    
+    // Periodic comprehensive health check every 5 minutes
+    if (now - lastHealthCheck >= HEALTH_CHECK_INTERVAL) {
+        LOG_INFO("Performing I2C health check");
+        
+        bool allSensorsPresent = verifyAllSensorsPresent();
+        
+        if (!allSensorsPresent) {
+            i2cBusError = true;
+            LOG_CRITICAL("I2C BUS ERROR: One or more sensors missing - hardware fault detected");
+            
+            // Set system to error state
+            currentState = SYS_ERROR;
+            
+            // Publish critical error via MQTT
+            if (g_networkManager && g_networkManager->isMQTTConnected()) {
+                g_networkManager->publish("monitor/error/i2c_bus", "CRITICAL: Sensor missing");
+            }
+        } else {
+            // All sensors present - check if we're recovering from previous error
+            if (i2cBusError) {
+                LOG_INFO("I2C bus recovered - all sensors present");
+                i2cBusError = false;
+                currentState = SYS_MONITORING;
+            }
+            
+            // Reset failure counters on successful health check
+            if (temperatureSensorFailures > 0 || weightSensorFailures > 0 || 
+                powerSensorFailures > 0 || adcSensorFailures > 0) {
+                LOG_INFO("I2C Health OK - Resetting failure counters (Temp:%d Weight:%d Power:%d ADC:%d)",
+                        temperatureSensorFailures, weightSensorFailures, 
+                        powerSensorFailures, adcSensorFailures);
+                temperatureSensorFailures = 0;
+                weightSensorFailures = 0;
+                powerSensorFailures = 0;
+                adcSensorFailures = 0;
+            }
+        }
+        
+        lastHealthCheck = now;
+    }
+    
+    // Check for excessive consecutive failures (indicates persistent problem)
+    if (temperatureSensorFailures >= MAX_CONSECUTIVE_FAILURES) {
+        LOG_ERROR("Temperature sensor: %d consecutive failures - possible I2C bus issue", 
+                 temperatureSensorFailures);
+    }
+    
+    if (weightSensorFailures >= MAX_CONSECUTIVE_FAILURES) {
+        LOG_ERROR("Weight sensor: %d consecutive failures - possible I2C bus issue", 
+                 weightSensorFailures);
+    }
+    
+    if (powerSensorFailures >= MAX_CONSECUTIVE_FAILURES) {
+        LOG_ERROR("Power sensor: %d consecutive failures - possible I2C bus issue", 
+                 powerSensorFailures);
+    }
+    
+    if (adcSensorFailures >= MAX_CONSECUTIVE_FAILURES) {
+        LOG_ERROR("ADC sensor: %d consecutive failures - possible I2C bus issue", 
+                 adcSensorFailures);
+    }
+}
+

@@ -85,6 +85,10 @@ public:
     void setHeartbeatInterval(unsigned long interval);
     unsigned long getPublishInterval() const;
     unsigned long getHeartbeatInterval() const;
+    
+    // I2C Health Monitoring
+    void checkI2CHealth();
+    bool verifyAllSensorsPresent();
 
 private:
     // System state
@@ -136,6 +140,14 @@ private:
     
     // I2C Multiplexer
     mutable TCA9548A_Multiplexer i2cMux;
+    
+    // I2C Health Tracking
+    unsigned long lastHealthCheck;
+    uint8_t temperatureSensorFailures;
+    uint8_t weightSensorFailures;
+    uint8_t powerSensorFailures;
+    uint8_t adcSensorFailures;
+    bool i2cBusError;
     
     // Multiplexer channel assignments
     static const uint8_t MCP9600_CHANNEL = 0;    // Temperature sensor

@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "monitor_system.h"
 #include "network_manager.h"
+#include "command_processor.h"
 
 // HTTP server configuration
 #define HTTP_PORT 80
@@ -20,6 +21,7 @@ public:
     void update();
     void setMonitorSystem(MonitorSystem* monitor);
     void setNetworkManager(NetworkManager* network);
+    void setCommandProcessor(CommandProcessor* processor);
     
     bool isRunning() const { return serverRunning; }
     uint16_t getPort() const { return serverPort; }
@@ -28,6 +30,7 @@ private:
     WiFiServer* server;
     MonitorSystem* monitorSystem;
     NetworkManager* networkManager;
+    CommandProcessor* commandProcessor;
     
     uint16_t serverPort;
     bool serverRunning;
@@ -42,7 +45,7 @@ private:
     // API endpoints
     void handleRoot(WiFiClient& client);
     void handleConfig(WiFiClient& client);
-    void handleAPI(WiFiClient& client, const char* path);
+    void handleAPI(WiFiClient& client, const char* path, const char* body);
     void handleStatus(WiFiClient& client);
     void handleSensors(WiFiClient& client);
     void handleWeight(WiFiClient& client);

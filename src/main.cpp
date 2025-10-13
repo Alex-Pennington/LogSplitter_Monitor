@@ -90,6 +90,7 @@ void setup() {
     // Initialize HTTP server
     httpServer.setMonitorSystem(&monitorSystem);
     httpServer.setNetworkManager(&networkManager);
+    httpServer.setCommandProcessor(&commandProcessor);
     
     debugPrintf("Network initialization complete\n");
     currentSystemState = SYS_CONNECTING;

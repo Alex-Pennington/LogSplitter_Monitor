@@ -6,6 +6,7 @@ HTTPServer::HTTPServer()
     : server(nullptr)
     , monitorSystem(nullptr)
     , networkManager(nullptr)
+    , commandProcessor(nullptr)
     , serverPort(HTTP_PORT)
     , serverRunning(false) {
 }
@@ -31,6 +32,10 @@ void HTTPServer::setNetworkManager(NetworkManager* network) {
     networkManager = network;
 }
 
+void HTTPServer::setCommandProcessor(CommandProcessor* processor) {
+    commandProcessor = processor;
+}
+
 void HTTPServer::update() {
     if (!serverRunning || !server) return;
     
@@ -53,7 +58,7 @@ void HTTPServer::handleClient(WiFiClient& client) {
         return;
     }
     
-    Logger::log(LOG_DEBUG, "HTTP %s %s", method, path);
+    Logger::log(LOG_INFO, "HTTP Request: %s %s", method, path);
     
     // Route requests
     if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
@@ -63,7 +68,7 @@ void HTTPServer::handleClient(WiFiClient& client) {
         handleConfig(client);
     }
     else if (strncmp(path, "/api/", 5) == 0) {
-        handleAPI(client, path + 5);
+        handleAPI(client, path + 5, body);
     }
     else if (strcmp(path, "/status") == 0) {
         handleStatus(client);
@@ -220,7 +225,7 @@ void HTTPServer::handleRoot(WiFiClient& client) {
     client.println("</script></body></html>");
 }
 
-void HTTPServer::handleAPI(WiFiClient& client, const char* path) {
+void HTTPServer::handleAPI(WiFiClient& client, const char* path, const char* body) {
     if (strcmp(path, "status") == 0) {
         handleStatus(client);
     }
@@ -246,7 +251,7 @@ void HTTPServer::handleAPI(WiFiClient& client, const char* path) {
         handleConfigAPI(client);
     }
     else if (strcmp(path, "command") == 0) {
-        handleCommand(client, "POST", "");
+        handleCommand(client, "POST", body);
     }
     else {
         sendError(client, 404, "API endpoint not found");
@@ -412,16 +417,60 @@ void HTTPServer::handleCommand(WiFiClient& client, const char* method, const cha
     }
     
     if (strlen(command) == 0) {
+        Logger::log(LOG_WARNING, "HTTP command: empty command received");
         sendError(client, 400, "Missing command parameter");
         return;
     }
     
-    // Execute command (you would integrate with CommandProcessor here)
-    char json[256];
-    snprintf(json, sizeof(json), "{\"result\":\"Command '%s' received\",\"success\":true}", command);
+    // Execute command via CommandProcessor
+    if (!commandProcessor) {
+        Logger::log(LOG_ERROR, "HTTP command failed: CommandProcessor not available");
+        sendError(client, 500, "Command processor not available");
+        return;
+    }
+    
+    Logger::log(LOG_INFO, "HTTP CommandProcessor available, executing command");
+    Logger::log(LOG_DEBUG, "HTTP executing command: '%s'", command);
+    
+    char response[512];
+    memset(response, 0, sizeof(response)); // Initialize response buffer
+    bool success = commandProcessor->processCommand(command, false, response, sizeof(response));
+    Logger::log(LOG_DEBUG, "HTTP command result: success=%d, response='%s'", success, response);
+    
+    // Handle empty response
+    if (strlen(response) == 0) {
+        strncpy(response, success ? "Command executed successfully" : "Command failed", sizeof(response) - 1);
+        response[sizeof(response) - 1] = '\0';
+    }
+    
+    // Escape quotes and special characters in response for JSON
+    char escapedResponse[1024];
+    int j = 0;
+    for (int i = 0; response[i] && j < sizeof(escapedResponse) - 2; i++) {
+        if (response[i] == '"') {
+            escapedResponse[j++] = '\\';
+            escapedResponse[j++] = '"';
+        } else if (response[i] == '\\') {
+            escapedResponse[j++] = '\\';
+            escapedResponse[j++] = '\\';
+        } else if (response[i] == '\n') {
+            escapedResponse[j++] = '\\';
+            escapedResponse[j++] = 'n';
+        } else if (response[i] == '\r') {
+            escapedResponse[j++] = '\\';
+            escapedResponse[j++] = 'r';
+        } else {
+            escapedResponse[j++] = response[i];
+        }
+    }
+    escapedResponse[j] = '\0';
+    
+    char json[1536];
+    snprintf(json, sizeof(json), "{\"result\":\"%s\",\"success\":%s}", 
+             escapedResponse, success ? "true" : "false");
     sendJSONResponse(client, json);
     
-    Logger::log(LOG_INFO, "HTTP command executed: %s", command);
+    Logger::log(LOG_INFO, "HTTP command executed: %s -> %s", command, success ? "success" : "failed");
 }
 
 void HTTPServer::handleVersion(WiFiClient& client) {
@@ -492,6 +541,11 @@ void HTTPServer::handleConfig(WiFiClient& client) {
     client.println(".status{padding:3px 8px;border-radius:3px;font-size:12px}");
     client.println(".status-ok{background:#4CAF50;color:white}");
     client.println(".status-error{background:#f44336;color:white}");
+    client.println(".command-group{display:flex;gap:10px;align-items:center}");
+    client.println(".command-group input{flex:1}");
+    client.println("textarea{width:100%;font-family:monospace;font-size:13px;background:#f8f8f8;border:1px solid #ddd;border-radius:4px;padding:8px}");
+    client.println(".quick-commands{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}");
+    client.println(".quick-commands button{margin:0;padding:8px 12px;font-size:12px}");
     client.println("</style></head><body>");
     client.println("<div class=\"container\">");
     client.println("<div class=\"nav\"><a href=\"/\">Dashboard</a><a href=\"/config\">Configuration</a>");
@@ -508,34 +562,34 @@ void HTTPServer::handleConfig(WiFiClient& client) {
     client.println("<div id=\"systemInfo\">Loading...</div>");
     client.println("</div>");
     
-    // Weight Scale Configuration Card
+    // Command Terminal Interface
     client.println("<div class=\"card\">");
-    client.println("<h2>Weight Scale Configuration</h2>");
+    client.println("<h2>Command Terminal</h2>");
     client.println("<div class=\"form-group\">");
-    client.println("<label>Zero Point:</label>");
-    client.println("<input type=\"number\" id=\"zeroPoint\" readonly>");
-    client.println("<button onclick=\"tareScale()\">Tare Scale</button>");
+    client.println("<label>Command Input:</label>");
+    client.println("<div class=\"command-group\">");
+    client.println("<input type=\"text\" id=\"commandInput\" placeholder=\"Enter command (e.g., 'set debug on', 'weight tare', 'show')\">");
+    client.println("<button onclick=\"sendCommand()\">Send Command</button>");
+    client.println("</div>");
     client.println("</div>");
     client.println("<div class=\"form-group\">");
-    client.println("<label>Scale Factor:</label>");
-    client.println("<input type=\"number\" id=\"scaleFactor\" step=\"0.000001\">");
-    client.println("<button onclick=\"saveScale()\">Save Scale</button>");
+    client.println("<label>Command Output:</label>");
+    client.println("<textarea id=\"commandOutput\" readonly rows=\"8\" placeholder=\"Command responses will appear here...\"></textarea>");
     client.println("</div>");
     client.println("<div class=\"form-group\">");
-    client.println("<label>Calibration Weight (lbs):</label>");
-    client.println("<input type=\"number\" id=\"calibWeight\" step=\"0.1\" placeholder=\"Enter known weight\">");
-    client.println("<button onclick=\"calibrateScale()\">Calibrate</button>");
+    client.println("<h3>Quick Commands:</h3>");
+    client.println("<div class=\"quick-commands\">");
+    client.println("<button onclick=\"quickCommand('show')\">Show Status</button>");
+    client.println("<button onclick=\"quickCommand('network')\">Network Info</button>");
+    client.println("<button onclick=\"quickCommand('weight status')\">Weight Status</button>");
+    client.println("<button onclick=\"quickCommand('temp status')\">Temperature Status</button>");
+    client.println("<button onclick=\"quickCommand('loglevel')\">Current Log Level</button>");
+    client.println("<button onclick=\"quickCommand('help')\">Help</button>");
     client.println("</div>");
-    client.println("<div class=\"form-group\">");
-    client.println("<button class=\"danger\" onclick=\"resetScale()\">Reset Scale Settings</button>");
     client.println("</div>");
     client.println("</div>");
     
-    // Network Configuration Card
-    client.println("<div class=\"card\">");
-    client.println("<h2>Network Configuration</h2>");
-    client.println("<div id=\"networkConfig\">Loading...</div>");
-    client.println("</div>");
+
     
     client.println("</div>");
     client.println("<script>");
@@ -546,17 +600,12 @@ void HTTPServer::handleConfig(WiFiClient& client) {
     client.println("async function loadConfig(){");
     client.println("const v=await fetchJSON('/api/version');");
     client.println("if(v){document.getElementById('systemInfo').innerHTML='<p><strong>Version:</strong> '+v.version+'</p><p><strong>Build:</strong> '+v.buildDate+' '+v.buildTime+'</p><p><strong>Platform:</strong> '+v.platform+'</p><p><strong>Compiler:</strong> '+v.compiler+'</p>'}");
-    client.println("const c=await fetchJSON('/api/config');");
-    client.println("if(c){document.getElementById('zeroPoint').value=c.weight.zero;document.getElementById('scaleFactor').value=c.weight.scale}");
-    client.println("const n=await fetchJSON('/api/network');");
-    client.println("if(n){document.getElementById('networkConfig').innerHTML='<p><strong>WiFi:</strong> <span class=\"status '+(n.wifi?'status-ok':'status-error')+'\">'+(n.wifi?'Connected':'Disconnected')+'</span></p><p><strong>MQTT:</strong> <span class=\"status '+(n.mqtt?'status-ok':'status-error')+'\">'+(n.mqtt?'Connected':'Disconnected')+'</span></p><p><strong>IP Address:</strong> '+n.ip+'</p>'}");
     client.println("}");
     
-    // Scale functions
-    client.println("async function tareScale(){const r=await postCommand('weight tare');if(r&&r.success){alert('Scale tared successfully');loadConfig()}else{alert('Tare failed')}}");
-    client.println("async function saveScale(){const scale=document.getElementById('scaleFactor').value;const r=await postCommand('weight scale '+scale);if(r&&r.success){alert('Scale factor saved');loadConfig()}else{alert('Save failed')}}");
-    client.println("async function calibrateScale(){const weight=document.getElementById('calibWeight').value;if(!weight){alert('Please enter calibration weight');return}const r=await postCommand('weight calibrate '+weight);if(r&&r.success){alert('Calibration completed');loadConfig()}else{alert('Calibration failed')}}");
-    client.println("async function resetScale(){if(confirm('Reset scale settings? This will clear calibration.')){const r=await postCommand('weight reset');if(r&&r.success){alert('Scale reset completed');loadConfig()}else{alert('Reset failed')}}}");
+    // Command terminal functions
+    client.println("async function sendCommand(){const cmd=document.getElementById('commandInput').value;if(!cmd.trim()){return}const output=document.getElementById('commandOutput');output.value+='> '+cmd+'\\n';const r=await postCommand(cmd);if(r){output.value+=r.result+'\\n'}else{output.value+='Command failed\\n'}output.scrollTop=output.scrollHeight;document.getElementById('commandInput').value=''}");
+    client.println("function quickCommand(cmd){document.getElementById('commandInput').value=cmd}");
+    client.println("document.addEventListener('DOMContentLoaded',function(){const input=document.getElementById('commandInput');if(input){input.addEventListener('keypress',function(e){if(e.key==='Enter'){sendCommand()}})}});");
     
     client.println("loadConfig();setInterval(loadConfig,10000);"); // Refresh every 10 seconds
     client.println("</script></body></html>");

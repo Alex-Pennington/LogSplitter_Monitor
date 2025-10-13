@@ -25,8 +25,7 @@ MCP9600Sensor::MCP9600Sensor(uint8_t address) :
 bool MCP9600Sensor::begin() {
     debugPrintf("MCP9600: Initializing thermocouple sensor at address 0x%02X using Wire1", i2cAddress);
     
-    // Initialize Wire1 for all I2C devices on Arduino R4 WiFi
-    Wire1.begin();
+    // Wire1.begin() should only be called once in main.cpp
     delay(50); // Give I2C time to initialize
     
     debugPrintf("MCP9600: Testing register access for device identification...");

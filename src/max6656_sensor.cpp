@@ -23,8 +23,7 @@ MAX6656Sensor::MAX6656Sensor(uint8_t address) :
 bool MAX6656Sensor::begin() {
     debugPrintf("MAX6656: Initializing temperature sensor at address 0x%02X using Wire1", i2cAddress);
     
-    // Initialize Wire1 for all I2C devices on Arduino R4 WiFi
-    Wire1.begin();
+    // Wire1.begin() should only be called once in main.cpp
     delay(50); // Give I2C time to initialize
     
     // Check if device is present
