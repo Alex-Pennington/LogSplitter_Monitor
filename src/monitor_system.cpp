@@ -164,33 +164,54 @@ void MonitorSystem::update() {
     // Perform periodic I2C health check (every 5 minutes)
     checkI2CHealth();
     
-    // Read all sensors sequentially with proper delays between each
-    // This prevents I2C multiplexer channel conflicts
-    if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
-        readSensors();  // Reads temperature sensor
-        delay(20);      // Delay between sensor operations
+    // Round-robin I2C sensor reading: read one sensor every 10 seconds
+    // LCD updates 5 seconds after each sensor read
+    const unsigned long SENSOR_READ_INTERVAL = 10000;  // 10 seconds between sensor reads
+    const unsigned long LCD_UPDATE_DELAY = 5000;       // LCD updates 5 seconds after sensor read
+    static uint8_t currentSensor = 0;  // 0=temp, 1=weight, 2=power, 3=adc
+    static unsigned long lastSensorReadTime = 0;
+    static unsigned long nextLCDUpdate = 0;
+    static bool lcdUpdatePending = false;
+    static bool firstRun = true;
+    
+    // On first run, read first sensor immediately
+    if (firstRun || (now - lastSensorReadTime >= SENSOR_READ_INTERVAL)) {
+        firstRun = false;
         
-        readWeightSensor();
-        delay(20);      // Delay between sensor operations
+        // Read the current sensor and publish its data
+        switch (currentSensor) {
+            case 0:
+                LOG_INFO("Polling temperature sensor (10s rotation)");
+                readSensors();  // Reads temperature sensor
+                break;
+            case 1:
+                LOG_INFO("Polling weight sensor (10s rotation)");
+                readWeightSensor();
+                break;
+            case 2:
+                LOG_INFO("Polling power sensor (10s rotation)");
+                readPowerSensor();
+                break;
+            case 3:
+                LOG_INFO("Polling ADC sensor (10s rotation)");
+                readAdcSensor();
+                break;
+        }
         
-        readPowerSensor();
-        delay(20);      // Delay between sensor operations
+        // Schedule LCD update for 5 seconds from now
+        nextLCDUpdate = now + LCD_UPDATE_DELAY;
+        lcdUpdatePending = true;
         
-        readAdcSensor();
-        delay(20);      // Delay between sensor operations
-        
-        lastSensorRead = now;
-        lastWeightRead = now;
-        lastPowerRead = now;
-        lastAdcRead = now;
+        // Move to next sensor in rotation
+        currentSensor = (currentSensor + 1) % 4;
+        lastSensorReadTime = now;
     }
     
-    
-    // Update LCD display periodically
-    static unsigned long lastLCDUpdate = 0;
-    if (now - lastLCDUpdate >= 1000) { // Update LCD every second
+    // Update LCD 5 seconds after sensor read
+    if (lcdUpdatePending && now >= nextLCDUpdate) {
+        LOG_INFO("Updating LCD display (5s after sensor read)");
         updateLCDDisplay();
-        lastLCDUpdate = now;
+        lcdUpdatePending = false;
     }
     
     // Publish status periodically
@@ -907,6 +928,9 @@ void MonitorSystem::updateLCDDisplay() {
     
     // Update additional sensor data (line 4) - Power and ADC sensors
     g_lcdDisplay->updateAdditionalSensors(currentVoltage, currentCurrent, currentAdcVoltage);
+    
+    // Disable multiplexer channel after LCD update
+    i2cMux.disableAllChannels();
 }
 
 long MonitorSystem::getWeightZeroPoint() const {

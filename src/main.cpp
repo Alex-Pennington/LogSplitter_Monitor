@@ -117,22 +117,41 @@ void loop() {
         monitorSystem.begin();
         debugPrintf("Monitor system initialized\n");
         
-        // Add a small delay before LCD initialization for stability
-        delay(100);
+        // Initialize LCD display last
+        Serial.println("Initializing LCD display on channel 7...");
         
-        // Select LCD channel on multiplexer before initializing
-        Wire1.beginTransmission(0x70);
+        // Use the multiplexer from monitor system to select LCD channel
+        Wire1.beginTransmission(0x70);  // TCA9548A multiplexer address
         Wire1.write(1 << 7);  // Select channel 7 for LCD
-        Wire1.endTransmission();
-        delay(50);  // Allow channel to stabilize
+        byte muxError = Wire1.endTransmission();
         
-        if (lcdDisplay.begin()) {
-            debugPrintf("LCD display initialized\n");
-            // Give LCD time to fully initialize before writing
-            delay(100);
+        if (muxError == 0) {
+            Serial.println("LCD multiplexer channel 7 selected");
+            delay(100);  // Allow channel to stabilize
+            
+            if (lcdDisplay.begin()) {
+                Serial.println("LCD display initialized successfully");
+                debugPrintf("LCD display initialized\n");
+                delay(200);  // Give LCD time to fully initialize
+                
+                // Initial LCD update with default values
+                lcdDisplay.updateSystemStatus(SYS_MONITORING, 0, true, false, false);
+                lcdDisplay.updateSensorReadings(0.0, 0.0, 0.0);  // Will be updated by monitor system
+                lcdDisplay.updateAdditionalSensors(0.0, 0.0, 0.0);
+                Serial.println("LCD test write complete - initial display set");
+            } else {
+                Serial.println("WARNING: LCD display initialization failed - not present or not responding");
+                debugPrintf("LCD display not present\n");
+            }
         } else {
-            debugPrintf("LCD display not present\n");
+            Serial.print("ERROR: Failed to select LCD multiplexer channel, error code: ");
+            Serial.println(muxError);
         }
+        
+        // Disable multiplexer channels after LCD init
+        Wire1.beginTransmission(0x70);
+        Wire1.write(0x00);  // Disable all channels
+        Wire1.endTransmission();
         
         sensorsInitialized = true;
         monitorSystem.setSystemState(SYS_MONITORING);
