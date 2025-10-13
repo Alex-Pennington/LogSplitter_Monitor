@@ -4,6 +4,10 @@
 #include "arduino_secrets.h"
 
 // System Constants
+const char* const SYSTEM_VERSION = "1.1.0";
+const char* const BUILD_DATE = __DATE__;
+const char* const BUILD_TIME = __TIME__;
+const char* const FIRMWARE_NAME = "LogSplitter Monitor";
 const unsigned long WATCHDOG_TIMEOUT_MS = 15000;
 const unsigned long MAIN_LOOP_TIMEOUT_MS = 10000;
 

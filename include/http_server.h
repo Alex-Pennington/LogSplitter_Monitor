@@ -41,6 +41,7 @@ private:
     
     // API endpoints
     void handleRoot(WiFiClient& client);
+    void handleConfig(WiFiClient& client);
     void handleAPI(WiFiClient& client, const char* path);
     void handleStatus(WiFiClient& client);
     void handleSensors(WiFiClient& client);
@@ -48,6 +49,8 @@ private:
     void handleTemperature(WiFiClient& client);
     void handleNetwork(WiFiClient& client);
     void handleSystem(WiFiClient& client);
+    void handleVersion(WiFiClient& client);
+    void handleConfigAPI(WiFiClient& client);
     void handleCommand(WiFiClient& client, const char* method, const char* body);
     
     // Utility functions

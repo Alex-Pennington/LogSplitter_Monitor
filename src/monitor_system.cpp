@@ -866,3 +866,15 @@ void MonitorSystem::updateLCDDisplay() {
     // Update additional sensor data (line 4) - Power and ADC sensors
     g_lcdDisplay->updateAdditionalSensors(currentVoltage, currentCurrent, currentAdcVoltage);
 }
+
+long MonitorSystem::getWeightZeroPoint() const {
+    return weightSensor.getZeroOffset();
+}
+
+float MonitorSystem::getWeightScale() const {
+    return weightSensor.getCalibrationFactor();
+}
+
+bool MonitorSystem::isWeightCalibrated() const {
+    return weightSensor.isReady() && (weightSensor.getCalibrationFactor() != 0.0);
+}

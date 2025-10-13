@@ -43,6 +43,11 @@ public:
     bool saveWeightCalibration();
     bool loadWeightCalibration();
     
+    // Weight configuration access
+    long getWeightZeroPoint() const;
+    float getWeightScale() const;
+    bool isWeightCalibrated() const;
+    
     // INA219 Power Monitor functions
     float getBusVoltage();
     float getShuntVoltage();

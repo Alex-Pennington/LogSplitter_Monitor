@@ -59,6 +59,9 @@ void HTTPServer::handleClient(WiFiClient& client) {
     if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
         handleRoot(client);
     }
+    else if (strcmp(path, "/config") == 0) {
+        handleConfig(client);
+    }
     else if (strncmp(path, "/api/", 5) == 0) {
         handleAPI(client, path + 5);
     }
@@ -186,8 +189,18 @@ void HTTPServer::handleRoot(WiFiClient& client) {
     client.println(".status{padding:5px 10px;border-radius:3px;display:inline-block}");
     client.println(".status-ok{background:#4CAF50;color:white}");
     client.println(".status-error{background:#f44336;color:white}");
+    client.println(".nav{background:#2c3e50;padding:10px 0;margin:-20px -20px 20px -20px;border-radius:8px 8px 0 0}");
+    client.println(".nav a{color:white;text-decoration:none;padding:10px 15px;margin:0 5px;border-radius:4px;display:inline-block}");
+    client.println(".nav a:hover{background:#34495e}");
+    client.println(".version{color:#bdc3c7;font-size:12px;float:right;margin-top:10px;margin-right:15px}");
     client.println("</style></head><body>");
     client.println("<div class=\"container\">");
+    client.println("<div class=\"nav\"><a href=\"/\">Dashboard</a><a href=\"/config\">Configuration</a>");
+    client.print("<span class=\"version\">");
+    client.print(FIRMWARE_NAME);
+    client.print(" v");
+    client.print(SYSTEM_VERSION);
+    client.println("</span></div>");
     client.println("<h1>LogSplitter Monitor Dashboard</h1>");
     client.println("<div class=\"card\"><h2>System Status</h2><div id=\"systemStatus\">Loading...</div></div>");
     client.println("<div class=\"card\"><h2>Sensors</h2><div id=\"sensors\" class=\"sensor-grid\">Loading...</div></div>");
@@ -225,6 +238,12 @@ void HTTPServer::handleAPI(WiFiClient& client, const char* path) {
     }
     else if (strcmp(path, "system") == 0) {
         handleSystem(client);
+    }
+    else if (strcmp(path, "version") == 0) {
+        handleVersion(client);
+    }
+    else if (strcmp(path, "config") == 0) {
+        handleConfigAPI(client);
     }
     else if (strcmp(path, "command") == 0) {
         handleCommand(client, "POST", "");
@@ -403,4 +422,142 @@ void HTTPServer::handleCommand(WiFiClient& client, const char* method, const cha
     sendJSONResponse(client, json);
     
     Logger::log(LOG_INFO, "HTTP command executed: %s", command);
+}
+
+void HTTPServer::handleVersion(WiFiClient& client) {
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{\"name\":\"%s\",\"version\":\"%s\",\"buildDate\":\"%s\",\"buildTime\":\"%s\","
+        "\"platform\":\"Arduino UNO R4 WiFi\",\"compiler\":\"" __VERSION__ "\"}",
+        FIRMWARE_NAME, SYSTEM_VERSION, BUILD_DATE, BUILD_TIME
+    );
+    
+    sendJSONResponse(client, json);
+}
+
+void HTTPServer::handleConfigAPI(WiFiClient& client) {
+    if (!monitorSystem) {
+        sendError(client, 500, "Monitor system not initialized");
+        return;
+    }
+    
+    char json[1024];
+    snprintf(json, sizeof(json),
+        "{\"weight\":{\"zero\":%ld,\"scale\":%.6f,\"calibrated\":%s},"
+        "\"display\":{\"enabled\":%s,\"backlight\":%s},"
+        "\"heartbeat\":{\"enabled\":%s,\"rate\":%d,\"brightness\":%d},"
+        "\"network\":{\"wifi\":\"%s\",\"mqtt\":\"%s\",\"syslog\":\"%s\"}}",
+        monitorSystem->getWeightZeroPoint(),
+        monitorSystem->getWeightScale(),
+        monitorSystem->isWeightCalibrated() ? "true" : "false",
+        "true", // Display enabled (placeholder)
+        "true", // Backlight enabled (placeholder)
+        "true", // Heartbeat enabled (placeholder)
+        72,     // Heartbeat rate (placeholder)
+        128,    // Heartbeat brightness (placeholder)
+        WiFi.SSID(),
+        "connected", // MQTT status (placeholder)
+        "192.168.1.238" // Syslog server (placeholder)
+    );
+    
+    sendJSONResponse(client, json);
+}
+
+void HTTPServer::handleConfig(WiFiClient& client) {
+    // Send HTML configuration page
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println("Connection: close");
+    client.println();
+    
+    client.println("<!DOCTYPE html><html><head>");
+    client.println("<title>LogSplitter Monitor - Configuration</title>");
+    client.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+    client.println("<style>");
+    client.println("body{font-family:Arial,sans-serif;margin:20px;background:#f0f0f0}");
+    client.println(".container{max-width:1200px;margin:0 auto;background:white;padding:20px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}");
+    client.println("h1{color:#333;border-bottom:2px solid #4CAF50;padding-bottom:10px}");
+    client.println(".card{background:#f9f9f9;padding:15px;margin:10px 0;border-radius:4px;border-left:4px solid #4CAF50}");
+    client.println(".form-group{margin:15px 0}");
+    client.println("label{display:block;margin-bottom:5px;color:#555;font-weight:bold}");
+    client.println("input,select{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}");
+    client.println("button{background:#4CAF50;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;margin:5px}");
+    client.println("button:hover{background:#45a049}");
+    client.println("button.danger{background:#f44336}");
+    client.println("button.danger:hover{background:#da190b}");
+    client.println(".nav{background:#2c3e50;padding:10px 0;margin:-20px -20px 20px -20px;border-radius:8px 8px 0 0}");
+    client.println(".nav a{color:white;text-decoration:none;padding:10px 15px;margin:0 5px;border-radius:4px;display:inline-block}");
+    client.println(".nav a:hover{background:#34495e}");
+    client.println(".version{color:#bdc3c7;font-size:12px;float:right;margin-top:10px;margin-right:15px}");
+    client.println(".status{padding:3px 8px;border-radius:3px;font-size:12px}");
+    client.println(".status-ok{background:#4CAF50;color:white}");
+    client.println(".status-error{background:#f44336;color:white}");
+    client.println("</style></head><body>");
+    client.println("<div class=\"container\">");
+    client.println("<div class=\"nav\"><a href=\"/\">Dashboard</a><a href=\"/config\">Configuration</a>");
+    client.print("<span class=\"version\">");
+    client.print(FIRMWARE_NAME);
+    client.print(" v");
+    client.print(SYSTEM_VERSION);
+    client.println("</span></div>");
+    client.println("<h1>System Configuration</h1>");
+    
+    // System Information Card
+    client.println("<div class=\"card\">");
+    client.println("<h2>System Information</h2>");
+    client.println("<div id=\"systemInfo\">Loading...</div>");
+    client.println("</div>");
+    
+    // Weight Scale Configuration Card
+    client.println("<div class=\"card\">");
+    client.println("<h2>Weight Scale Configuration</h2>");
+    client.println("<div class=\"form-group\">");
+    client.println("<label>Zero Point:</label>");
+    client.println("<input type=\"number\" id=\"zeroPoint\" readonly>");
+    client.println("<button onclick=\"tareScale()\">Tare Scale</button>");
+    client.println("</div>");
+    client.println("<div class=\"form-group\">");
+    client.println("<label>Scale Factor:</label>");
+    client.println("<input type=\"number\" id=\"scaleFactor\" step=\"0.000001\">");
+    client.println("<button onclick=\"saveScale()\">Save Scale</button>");
+    client.println("</div>");
+    client.println("<div class=\"form-group\">");
+    client.println("<label>Calibration Weight (lbs):</label>");
+    client.println("<input type=\"number\" id=\"calibWeight\" step=\"0.1\" placeholder=\"Enter known weight\">");
+    client.println("<button onclick=\"calibrateScale()\">Calibrate</button>");
+    client.println("</div>");
+    client.println("<div class=\"form-group\">");
+    client.println("<button class=\"danger\" onclick=\"resetScale()\">Reset Scale Settings</button>");
+    client.println("</div>");
+    client.println("</div>");
+    
+    // Network Configuration Card
+    client.println("<div class=\"card\">");
+    client.println("<h2>Network Configuration</h2>");
+    client.println("<div id=\"networkConfig\">Loading...</div>");
+    client.println("</div>");
+    
+    client.println("</div>");
+    client.println("<script>");
+    client.println("async function fetchJSON(url){try{const r=await fetch(url);return await r.json()}catch(e){return null}}");
+    client.println("async function postCommand(cmd){try{const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});return await r.json()}catch(e){return null}}");
+    
+    // Load configuration data
+    client.println("async function loadConfig(){");
+    client.println("const v=await fetchJSON('/api/version');");
+    client.println("if(v){document.getElementById('systemInfo').innerHTML='<p><strong>Version:</strong> '+v.version+'</p><p><strong>Build:</strong> '+v.buildDate+' '+v.buildTime+'</p><p><strong>Platform:</strong> '+v.platform+'</p><p><strong>Compiler:</strong> '+v.compiler+'</p>'}");
+    client.println("const c=await fetchJSON('/api/config');");
+    client.println("if(c){document.getElementById('zeroPoint').value=c.weight.zero;document.getElementById('scaleFactor').value=c.weight.scale}");
+    client.println("const n=await fetchJSON('/api/network');");
+    client.println("if(n){document.getElementById('networkConfig').innerHTML='<p><strong>WiFi:</strong> <span class=\"status '+(n.wifi?'status-ok':'status-error')+'\">'+(n.wifi?'Connected':'Disconnected')+'</span></p><p><strong>MQTT:</strong> <span class=\"status '+(n.mqtt?'status-ok':'status-error')+'\">'+(n.mqtt?'Connected':'Disconnected')+'</span></p><p><strong>IP Address:</strong> '+n.ip+'</p>'}");
+    client.println("}");
+    
+    // Scale functions
+    client.println("async function tareScale(){const r=await postCommand('weight tare');if(r&&r.success){alert('Scale tared successfully');loadConfig()}else{alert('Tare failed')}}");
+    client.println("async function saveScale(){const scale=document.getElementById('scaleFactor').value;const r=await postCommand('weight scale '+scale);if(r&&r.success){alert('Scale factor saved');loadConfig()}else{alert('Save failed')}}");
+    client.println("async function calibrateScale(){const weight=document.getElementById('calibWeight').value;if(!weight){alert('Please enter calibration weight');return}const r=await postCommand('weight calibrate '+weight);if(r&&r.success){alert('Calibration completed');loadConfig()}else{alert('Calibration failed')}}");
+    client.println("async function resetScale(){if(confirm('Reset scale settings? This will clear calibration.')){const r=await postCommand('weight reset');if(r&&r.success){alert('Scale reset completed');loadConfig()}else{alert('Reset failed')}}}");
+    
+    client.println("loadConfig();setInterval(loadConfig,10000);"); // Refresh every 10 seconds
+    client.println("</script></body></html>");
 }
