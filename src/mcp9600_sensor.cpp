@@ -111,20 +111,44 @@ float MCP9600Sensor::getThermocoupleTemperature() {
         debugPrintf("MCP9600: Raw=0x%04X (%d) -> %.3fC\n", rawTemp, signedRaw, temperature);
     }
     
-    // Static variable to track previous temperature for rate checking
+    // Static variables to track previous temperature for validation
     static float lastTemp = temperature;
     static bool firstReading = true;
+    static int consecutiveZeros = 0;
+    
+    // Check for thermocouple disconnection or sensor issues
+    if (temperature == 0.0) {
+        consecutiveZeros++;
+        if (consecutiveZeros > 3) {
+            LOG_WARN("MCP9600: Thermocouple reading stuck at 0C - possible disconnection");
+            if (debugOutputEnabled) {
+                debugPrintf("MCP9600: *** WARNING - Thermocouple stuck at 0C for %d readings ***\n", consecutiveZeros);
+            }
+        }
+    } else {
+        consecutiveZeros = 0;
+    }
     
     if (!firstReading && debugOutputEnabled) {
         float tempChange = temperature - lastTemp;
         debugPrintf("MCP9600: Change: %.3fC (%.3f -> %.3f)\n", tempChange, lastTemp, temperature);
         
         // Flag suspicious large changes
-        if (abs(tempChange) > 10.0) {
+        if (abs(tempChange) > 50.0) {
             debugPrintf("MCP9600: *** WARNING - Large jump detected! ***\n");
+            LOG_WARN("MCP9600: Large temperature jump: %.1fC", tempChange);
         }
     } else if (firstReading && debugOutputEnabled) {
-        debugPrintf("MCP9600: First reading\n");
+        debugPrintf("MCP9600: First thermocouple reading: %.1fC\n", temperature);
+    }
+    
+    // Validate thermocouple reading is within Type K range (-200C to +1372C)
+    if (temperature < -250.0 || temperature > 1400.0) {
+        LOG_WARN("MCP9600: Thermocouple reading out of Type K range: %.1fC", temperature);
+        if (debugOutputEnabled) {
+            debugPrintf("MCP9600: *** WARNING - Reading outside Type K range ***\n");
+        }
+        return -999.0;
     }
     
     if (filteringEnabled) {
@@ -148,14 +172,30 @@ float MCP9600Sensor::getAmbientTemperature() {
     LOG_DEBUG("MCP9600: Raw ambient reading from 0x%02X = 0x%04X", MCP9600_REG_COLD_JUNCTION, rawTemp);
     
     if (rawTemp == 0xFFFF) {
-        // If ambient temperature register isn't available, estimate from thermocouple
-        // This is a fallback for devices with limited register support
-        LOG_DEBUG("MCP9600: Ambient register not available, using estimated room temperature");
-        return 23.0 + ambientTempOffset; // Return estimated room temperature
+        // Cold junction register is not available - try to estimate from device temperature
+        // First, try reading the device ID register which should be accessible
+        uint16_t deviceId = readRegister16(MCP9600_REG_DEVICE_ID);
+        if (deviceId != 0xFFFF) {
+            // Device is responding, so estimate ambient temperature
+            // Use a more realistic room temperature based on typical industrial environments
+            static float estimatedTemp = 25.0; // Start with 25C (77F)
+            LOG_INFO("MCP9600: Cold junction unavailable, using estimated ambient: %.1fC", estimatedTemp);
+            return estimatedTemp + ambientTempOffset;
+        } else {
+            // Device is not responding at all
+            LOG_WARN("MCP9600: Device not responding, ambient temperature unknown");
+            return -999.0;
+        }
     }
     
     float temperature = convertRawToTemperature(rawTemp) + ambientTempOffset;
     LOG_DEBUG("MCP9600: Converted ambient temperature = %.2fC", temperature);
+    
+    // Validate ambient temperature is reasonable (typically -40C to +125C for sensor)
+    if (temperature < -50.0 || temperature > 150.0) {
+        LOG_WARN("MCP9600: Ambient temperature out of range: %.1fC", temperature);
+        return -999.0;
+    }
     
     if (filteringEnabled) {
         temperature = applyFilter(temperature, ambientTempBuffer);
@@ -322,26 +362,50 @@ uint8_t MCP9600Sensor::readRegister8(uint8_t reg) {
 }
 
 uint16_t MCP9600Sensor::readRegister16(uint8_t reg) {
-    Wire1.beginTransmission(i2cAddress);
-    Wire1.write(reg);
-    uint8_t error = Wire1.endTransmission();
-    
-    if (error != 0) {
-        // Only log errors for registers other than 0x02 (ambient temp has known issues)
-        if (reg != 0x02) {
-            LOG_ERROR("MCP9600: I2C transmission error %d when reading register 0x%02X", error, reg);
+    // Retry logic for better I2C reliability
+    for (int retry = 0; retry < 3; retry++) {
+        Wire1.beginTransmission(i2cAddress);
+        Wire1.write(reg);
+        uint8_t error = Wire1.endTransmission();
+        
+        if (error != 0) {
+            if (retry == 2) { // Last retry
+                if (reg == 0x02) {
+                    LOG_DEBUG("MCP9600: Ambient temp register 0x%02X unavailable after retries", reg);
+                } else {
+                    LOG_ERROR("MCP9600: I2C transmission error %d when reading register 0x%02X after retries", error, reg);
+                }
+            }
+            delay(1); // Small delay before retry
+            continue;
         }
-        return 0xFFFF;
+        
+        Wire1.requestFrom((uint8_t)i2cAddress, (uint8_t)2);
+        if (Wire1.available() >= 2) {
+            uint8_t msb = Wire1.read();
+            uint8_t lsb = Wire1.read();
+            uint16_t result = (uint16_t)(msb << 8) | lsb;
+            
+            // Additional validation for thermocouple register
+            if (reg == MCP9600_REG_HOT_JUNCTION) {
+                int16_t signed_result = (int16_t)result;
+                float temp_c = signed_result * 0.0625;
+                // Validate thermocouple reading is within reasonable range
+                if (temp_c < -200.0 || temp_c > 1800.0) {
+                    LOG_DEBUG("MCP9600: Thermocouple reading out of range: %.1fC, retrying...", temp_c);
+                    if (retry < 2) continue; // Retry if not last attempt
+                }
+            }
+            
+            return result;
+        }
+        
+        if (retry == 2) {
+            debugPrintf("MCP9600: Insufficient data when reading 16-bit register 0x%02X after retries", reg);
+        }
+        delay(1); // Small delay before retry
     }
     
-    Wire1.requestFrom((uint8_t)i2cAddress, (uint8_t)2);
-    if (Wire1.available() >= 2) {
-        uint8_t msb = Wire1.read();
-        uint8_t lsb = Wire1.read();
-        return (uint16_t)(msb << 8) | lsb;
-    }
-    
-    debugPrintf("MCP9600: Insufficient data when reading 16-bit register 0x%02X", reg);
     return 0xFFFF;
 }
 
