@@ -63,9 +63,9 @@ Successfully integrated MCP3421 18-bit I2C ADC sensor into the LogSplitter Monit
 ## ADC Monitoring Features
 
 ### MQTT Topics
-- `r4/monitor/adc/voltage` - ADC voltage reading (high precision)
-- `r4/monitor/adc/raw` - Raw ADC value (signed integer)
-- `r4/monitor/adc/status` - Comprehensive sensor status
+- `monitor/adc/voltage` - ADC voltage reading (high precision)
+- `monitor/adc/raw` - Raw ADC value (signed integer)
+- `monitor/adc/status` - Comprehensive sensor status
 
 ### Telnet Commands
 - `adc read` - Display voltage and raw value
@@ -130,9 +130,9 @@ MCP3421: 18-bit, Gain=1x, Vref=2.048V
 
 ### MQTT Data
 ```
-r4/monitor/adc/voltage: "0.125634"
-r4/monitor/adc/raw: "4095"
-r4/monitor/adc/status: "ready: YES, voltage: 0.125634V, raw: 4095, resolution: 16-bit"
+monitor/adc/voltage: "0.125634"
+monitor/adc/raw: "4095"
+monitor/adc/status: "ready: YES, voltage: 0.125634V, raw: 4095, resolution: 16-bit"
 ```
 
 ## Benefits

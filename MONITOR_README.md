@@ -81,29 +81,29 @@ All I2C devices use **Wire1** (Qwiic connector) for consistency and proper Ardui
 
 ### Published Topics (Monitoring Data)
 ```
-r4/monitor/status        - Comprehensive system status
-r4/monitor/heartbeat     - Periodic heartbeat with uptime
-r4/monitor/temperature   - Temperature sensor reading (°F) - Local/Ambient (backward compatibility)
-r4/monitor/temperature/local   - Local/Ambient temperature from MCP9600 (°F)
-r4/monitor/temperature/remote  - Remote/Thermocouple temperature from MCP9600 (°F)
-r4/monitor/voltage       - Voltage monitoring (V)
-r4/monitor/weight        - Weight readings (calibrated)
-r4/monitor/weight/raw    - Raw ADC values from NAU7802
-r4/monitor/weight/status - Weight sensor comprehensive status
-r4/monitor/uptime        - System uptime (seconds)
-r4/monitor/memory        - Free memory (bytes)
-r4/monitor/input/X       - Digital input X state changes (1/0)
-r4/monitor/error         - System error messages
+monitor/status        - Comprehensive system status
+monitor/heartbeat     - Periodic heartbeat with uptime
+monitor/temperature   - Temperature sensor reading (°F) - Local/Ambient (backward compatibility)
+monitor/temperature/local   - Local/Ambient temperature from MCP9600 (°F)
+monitor/temperature/remote  - Remote/Thermocouple temperature from MCP9600 (°F)
+monitor/voltage       - Voltage monitoring (V)
+monitor/weight        - Weight readings (calibrated)
+monitor/weight/raw    - Raw ADC values from NAU7802
+monitor/weight/status - Weight sensor comprehensive status
+monitor/uptime        - System uptime (seconds)
+monitor/memory        - Free memory (bytes)
+monitor/input/X       - Digital input X state changes (1/0)
+monitor/error         - System error messages
 ```
 
 ### Subscribed Topics (Command Input)
 ```
-r4/monitor/control       - Command input topic
+monitor/control       - Command input topic
 ```
 
 ### Response Topics
 ```
-r4/monitor/control/resp  - Command responses
+monitor/control/resp  - Command responses
 ```
 
 > **HTTP Web Interface**: A version with full HTTP web server, REST API, and web dashboard is available in the `feature/http-server` branch. See [HTTP_SERVER_INTEGRATION.md](HTTP_SERVER_INTEGRATION.md) for details.

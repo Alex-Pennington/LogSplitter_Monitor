@@ -91,7 +91,7 @@ telnet 192.168.1.101 23
 > test sensors
 
 # MQTT monitoring
-mosquitto_sub -h 159.203.138.46 -p 1883 -u <user> -P <pass> -t "r4/monitor/#"
+mosquitto_sub -h 159.203.138.46 -p 1883 -u <user> -P <pass> -t "monitor/#"
 
 # Serial console (always available)
 pio device monitor

@@ -219,7 +219,7 @@ telnet <monitor-ip> 23
 tail -f /var/log/syslog | grep -E "(logsplitter|logmonitor)"
 
 # Test MQTT coordination
-mosquitto_sub -h 159.203.138.46 -p 1883 -u <user> -P <pass> -t "r4/+/+"
+mosquitto_sub -h 159.203.138.46 -p 1883 -u <user> -P <pass> -t "+/+"
 ```
 
 ## Visual Feedback Systems
@@ -253,28 +253,28 @@ The Monitor unit features a sophisticated LED matrix heartbeat animation system:
 
 #### Controller Publishing Pattern
 ```
-r4/controller/status     # System operational status
-r4/controller/pressure   # Pressure sensor readings
-r4/controller/safety     # Safety system status
-r4/controller/sequence   # Operation sequence state
-r4/controller/relay      # Relay state changes
-r4/controller/heartbeat  # Operational heartbeat
+controller/status     # System operational status
+controller/pressure   # Pressure sensor readings
+controller/safety     # Safety system status
+controller/sequence   # Operation sequence state
+controller/relay      # Relay state changes
+controller/heartbeat  # Operational heartbeat
 ```
 
 #### Monitor Publishing Pattern
 ```
-r4/monitor/status        # Monitoring system status
-r4/monitor/weight        # Weight sensor readings
-r4/monitor/temperature   # Temperature readings
-r4/monitor/heartbeat     # Monitor heartbeat (not LED animation)
-r4/monitor/sensors       # All sensor data summary
+monitor/status        # Monitoring system status
+monitor/weight        # Weight sensor readings
+monitor/temperature   # Temperature readings
+monitor/heartbeat     # Monitor heartbeat (not LED animation)
+monitor/sensors       # All sensor data summary
 ```
 
 #### Cross-Unit Coordination
 ```
-r4/coordination/control  # Cross-unit command channel
-r4/coordination/status   # Unified system status
-r4/emergency/stop        # Emergency coordination channel
+coordination/control  # Cross-unit command channel
+coordination/status   # Unified system status
+emergency/stop        # Emergency coordination channel
 ```
 
 ## Deployment Considerations

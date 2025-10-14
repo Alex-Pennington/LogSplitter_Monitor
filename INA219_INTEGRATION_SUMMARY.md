@@ -60,10 +60,10 @@ Successfully integrated INA219 DC current/voltage/power sensor into the LogSplit
 ## Power Monitoring Features
 
 ### MQTT Topics
-- `r4/monitor/power/voltage` - Bus voltage in volts
-- `r4/monitor/power/current` - Current in milliamps
-- `r4/monitor/power/watts` - Power in milliwatts
-- `r4/monitor/power/status` - Comprehensive sensor status
+- `monitor/power/voltage` - Bus voltage in volts
+- `monitor/power/current` - Current in milliamps
+- `monitor/power/watts` - Power in milliwatts
+- `monitor/power/status` - Comprehensive sensor status
 
 ### Telnet Commands
 - `power read` - Display all power measurements
@@ -99,10 +99,10 @@ bus voltage: 5.000V
 
 ### MQTT Data
 ```
-r4/monitor/power/voltage: "5.000"
-r4/monitor/power/current: "150.25"
-r4/monitor/power/watts: "751.25"
-r4/monitor/power/status: "ready: YES, voltage: 5.000V, current: 150.25mA, power: 751.25mW"
+monitor/power/voltage: "5.000"
+monitor/power/current: "150.25"
+monitor/power/watts: "751.25"
+monitor/power/status: "ready: YES, voltage: 5.000V, current: 150.25mA, power: 751.25mW"
 ```
 
 ## Benefits

@@ -1,16 +1,11 @@
 #include "ina219_sensor.h"
 #include "logger.h"
+#include "constants.h"
 
 extern void debugPrintf(const char* fmt, ...);
 
 // Global instance pointer
 INA219_Sensor* g_ina219Sensor = nullptr;
-
-// MQTT topics for INA219 data
-const char TOPIC_MONITOR_POWER_VOLTAGE[] = "r4/monitor/power/voltage";
-const char TOPIC_MONITOR_POWER_CURRENT[] = "r4/monitor/power/current"; 
-const char TOPIC_MONITOR_POWER_POWER[] = "r4/monitor/power/power";
-const char TOPIC_MONITOR_POWER_STATUS[] = "r4/monitor/power/status";
 
 INA219_Sensor::INA219_Sensor(uint8_t address) :
     wire(nullptr),
