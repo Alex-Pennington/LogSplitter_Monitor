@@ -1,0 +1,16 @@
+{
+  "mqtt": {
+    "host": "192.168.1.100",
+    "port": 1883,
+    "keepalive": 60,
+    "username": "",
+    "password": ""
+  },
+  "influxdb": {
+    "url": "http://localhost:8086",
+    "token": "your-influxdb-v2-token-here",
+    "org": "your-organization",
+    "bucket": "logsplitter"
+  },
+  "log_level": "INFO"
+}

@@ -7,10 +7,10 @@ extern void debugPrintf(const char* fmt, ...);
 INA219_Sensor* g_ina219Sensor = nullptr;
 
 // MQTT topics for INA219 data
-const char TOPIC_MONITOR_POWER_VOLTAGE[] = "r4/monitor/power/voltage";
-const char TOPIC_MONITOR_POWER_CURRENT[] = "r4/monitor/power/current"; 
-const char TOPIC_MONITOR_POWER_POWER[] = "r4/monitor/power/power";
-const char TOPIC_MONITOR_POWER_STATUS[] = "r4/monitor/power/status";
+const char TOPIC_MONITOR_POWER_VOLTAGE[] = "monitor/power/voltage";
+const char TOPIC_MONITOR_POWER_CURRENT[] = "monitor/power/current"; 
+const char TOPIC_MONITOR_POWER_POWER[] = "monitor/power/power";
+const char TOPIC_MONITOR_POWER_STATUS[] = "monitor/power/status";
 
 INA219_Sensor::INA219_Sensor(uint8_t address) :
     wire(nullptr),

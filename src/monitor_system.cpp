@@ -417,7 +417,7 @@ void MonitorSystem::readDigitalInputs() {
                 // Publish state change to MQTT
                 if (g_networkManager && g_networkManager->isMQTTConnected()) {
                     char topic[64];
-                    snprintf(topic, sizeof(topic), "r4/monitor/input/%d", pin);
+                    snprintf(topic, sizeof(topic), "monitor/input/%d", pin);
                     g_networkManager->publish(topic, currentState ? "1" : "0");
                 }
             }
