@@ -256,6 +256,40 @@ bool NetworkManager::publishWithRetain(const char* topic, const char* payload) {
     }
 }
 
+bool NetworkManager::publishBinary(const char* topic, uint8_t* data, size_t length) {
+    if (mqttState != MQTTState::CONNECTED) {
+        failedPublishCount++;
+        return false;
+    }
+    
+    // Timeout protection for binary data
+    unsigned long startTime = millis();
+    
+    if (mqttClient.beginMessage(topic)) {
+        // Write binary data directly
+        size_t written = mqttClient.write(data, length);
+        bool success = mqttClient.endMessage();
+        
+        unsigned long duration = millis() - startTime;
+        if (duration > 200) { // Warn if binary publish takes >200ms
+            debugPrintf("NetworkManager: WARNING: Binary MQTT publish took %lums\n", duration);
+        }
+        
+        if (!success || written != length) {
+            failedPublishCount++;
+            debugPrintf("NetworkManager: Binary publish failed - wrote %d of %d bytes\n", written, length);
+            return false;
+        }
+        
+        debugPrintf("NetworkManager: Binary publish success - %d bytes to %s\n", length, topic);
+        return true;
+    } else {
+        failedPublishCount++;
+        debugPrintf("NetworkManager: Failed to begin binary message to %s\n", topic);
+        return false;
+    }
+}
+
 bool NetworkManager::sendSyslog(const char* message, int level) {
     lastSyslogAttempt = millis();
     

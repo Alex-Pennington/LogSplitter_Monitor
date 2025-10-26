@@ -10,6 +10,7 @@
 #define BRIDGE_BUFFER_SIZE 512
 #define MAX_MESSAGE_LENGTH 256
 #define BRIDGE_TIMEOUT_MS 1000
+#define PROTOBUF_MIN_MESSAGE_SIZE 8    // Minimum protobuf message size
 
 // Rate limiting configuration
 #define BRIDGE_RATE_LIMIT_MS 100          // Minimum 100ms between MQTT publishes
@@ -81,7 +82,8 @@ private:
     size_t bufferIndex;
     
     // Message processing
-    void processMessage(const String& message);
+    void processProtobufMessage(uint8_t* data, size_t length);  // NEW: Protobuf handler
+    void processMessage(const String& message);                 // LEGACY: Text handler
     bool parseStructuredMessage(const String& message, unsigned long& timestamp, 
                                String& level, String& content);
     void handleTelemetryMessage(unsigned long timestamp, const String& level, 

@@ -39,33 +39,29 @@ void SerialBridge::setNetworkManager(NetworkManager* network) {
 void SerialBridge::update() {
     if (!bridgeConnected) return;
     
-    // Read available data from Serial1
+    // Read available data from Serial1 (now protobuf binary data)
     while (Serial1.available()) {
-        char c = Serial1.read();
+        uint8_t byte = Serial1.read();
         
-        // Handle line endings - both \n and \r\n
-        if (c == '\n' || c == '\r') {
-            if (bufferIndex > 0) {
-                // Null terminate the message
-                messageBuffer[bufferIndex] = '\0';
-                
-                // Process the complete message
-                String message = String(messageBuffer);
-                processMessage(message);
+        // Add byte to buffer if there's space
+        if (bufferIndex < sizeof(messageBuffer) - 1) {
+            messageBuffer[bufferIndex++] = byte;
+            
+            // Check if we have a complete protobuf message
+            // For now, assume fixed-size messages or implement proper framing
+            if (bufferIndex >= PROTOBUF_MIN_MESSAGE_SIZE) {
+                // Process the complete protobuf message
+                processProtobufMessage(messageBuffer, bufferIndex);
                 
                 // Reset buffer for next message
                 bufferIndex = 0;
                 memset(messageBuffer, 0, sizeof(messageBuffer));
             }
         }
-        // Add character to buffer if there's space
-        else if (bufferIndex < sizeof(messageBuffer) - 1) {
-            messageBuffer[bufferIndex++] = c;
-        }
         // Buffer overflow - reset and log error
         else {
             parseErrors++;
-            logBridgeActivity(LOG_ERROR, "Message buffer overflow, discarding data");
+            logBridgeActivity(LOG_ERROR, "Protobuf buffer overflow, discarding data");
             bufferIndex = 0;
             memset(messageBuffer, 0, sizeof(messageBuffer));
         }
@@ -83,6 +79,33 @@ void SerialBridge::update() {
     }
 }
 
+void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
+    if (length == 0) return;
+    
+    messagesReceived++;
+    lastMessageTime = millis();
+    
+    logBridgeActivity(LOG_DEBUG, "Received protobuf message: %d bytes", length);
+    
+    // Forward protobuf message to MQTT
+    if (networkManager && networkManager->isMQTTConnected()) {
+        // Publish raw protobuf data to controller/protobuff topic
+        bool success = networkManager->publishBinary("controller/protobuff", data, length);
+        
+        if (success) {
+            messagesForwarded++;
+            logBridgeActivity(LOG_DEBUG, "Forwarded protobuf to MQTT: %d bytes", length);
+        } else {
+            messagesDropped++;
+            logBridgeActivity(LOG_WARNING, "Failed to forward protobuf message to MQTT");
+        }
+    } else {
+        messagesDropped++;
+        logBridgeActivity(LOG_WARNING, "Cannot forward protobuf - MQTT not connected");
+    }
+}
+
+// Legacy text message processing (deprecated)
 void SerialBridge::processMessage(const String& message) {
     if (message.length() == 0) return;
     

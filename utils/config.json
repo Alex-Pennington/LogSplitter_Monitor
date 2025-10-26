@@ -17,5 +17,5 @@
     "port": 5000,
     "debug": false
   },
-  "log_level": "INFO"
+  "log_level": "DEBUG"
 }
