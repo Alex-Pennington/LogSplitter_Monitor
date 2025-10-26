@@ -4,6 +4,7 @@
 #include "constants.h"
 #include "network_manager.h"
 #include "logger.h"
+#include "protobuf_decoder.h"
 
 // Serial bridge configuration
 #define SERIAL_BRIDGE_BAUD 115200
@@ -59,6 +60,7 @@ public:
     
 private:
     NetworkManager* networkManager;
+    ProtobufDecoder protobufDecoder;
     
     // Connection state
     bool bridgeConnected;

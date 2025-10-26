@@ -1,0 +1,186 @@
+// Protocol Buffer definitions for LogSplitter Controller Telemetry API
+// Compatible with existing Controller implementation
+// This schema matches the telemetry data structure from http://localhost:3000/doc/TELEMETRY_API
+
+syntax = "proto3";
+
+package controller;
+
+// Timestamp for all telemetry messages
+message Timestamp {
+    uint64 system_time_ms = 1;    // System uptime in milliseconds
+    uint64 unix_timestamp = 2;    // Unix timestamp (if RTC available)
+}
+
+// Pressure sensor telemetry (A1 and A5 sensors)
+message PressureReading {
+    Timestamp timestamp = 1;
+    
+    // A1 Sensor (System Pressure) - 4-20mA current loop
+    float a1_pressure_psi = 2;     // Pressure reading in PSI
+    float a1_voltage = 3;          // Raw voltage reading
+    bool a1_valid = 4;             // Reading validity flag
+    
+    // A5 Sensor (Filter Pressure) - 0-5V voltage
+    float a5_pressure_psi = 5;     // Pressure reading in PSI  
+    float a5_voltage = 6;          // Raw voltage reading
+    bool a5_valid = 7;             // Reading validity flag
+    
+    // System pressure status
+    bool pressure_alarm = 8;       // Pressure alarm active
+    bool over_pressure = 9;        // Over pressure condition
+}
+
+// Relay control and status
+message RelayStatus {
+    Timestamp timestamp = 1;
+    
+    // Primary hydraulic relays
+    bool r1_extend_state = 2;      // R1 extend relay state
+    bool r2_retract_state = 3;     // R2 retract relay state
+    
+    // Relay operational data
+    uint32 r1_on_time_total_ms = 4;   // Total R1 on time
+    uint32 r2_on_time_total_ms = 5;   // Total R2 on time
+    uint32 r1_cycle_count = 6;         // R1 activation count
+    uint32 r2_cycle_count = 7;         // R2 activation count
+    
+    // Additional relay states (R3-R9)
+    repeated bool additional_relays = 8;  // States of R3-R9
+}
+
+// Digital input states (limit switches, controls)
+message InputStatus {
+    Timestamp timestamp = 1;
+    
+    // Critical inputs
+    bool pin6_extend_limit = 2;    // Pin 6 - Extend limit switch
+    bool pin7_retract_limit = 3;   // Pin 7 - Retract limit switch  
+    bool pin8_splitter_operator = 4; // Pin 8 - Splitter operator signal
+    bool pin12_emergency_stop = 5; // Pin 12 - Emergency stop button
+    
+    // Input change detection
+    repeated bool input_states = 6;     // All digital input states
+    repeated bool input_changed = 7;    // Input change flags
+}
+
+// Sequence operation status
+message SequenceStatus {
+    Timestamp timestamp = 1;
+    
+    // Current sequence state
+    string current_state = 2;      // "IDLE", "EXTEND_START", "EXTENDING", etc.
+    string previous_state = 3;     // Previous sequence state
+    uint32 state_elapsed_ms = 4;   // Time in current state
+    
+    // Sequence operation info
+    bool sequence_active = 5;      // Sequence currently running
+    string sequence_type = 6;      // "AUTO", "MANUAL", "TEST"
+    uint32 total_cycles = 7;       // Completed sequence cycles
+    uint32 sequence_timeout_ms = 8; // Configured timeout
+    
+    // Sequence timing
+    uint32 extend_time_ms = 9;     // Last extend operation time
+    uint32 retract_time_ms = 10;   // Last retract operation time
+}
+
+// System health and status
+message SystemHealth {
+    Timestamp timestamp = 1;
+    
+    // Overall system state  
+    string system_mode = 2;        // "READY", "RUNNING", "FAULT", "E_STOP"
+    bool safety_system_active = 3; // Safety system engaged
+    bool emergency_stop_latched = 4; // E-Stop latch state
+    
+    // System performance
+    uint32 uptime_ms = 5;          // System uptime
+    uint32 free_memory_bytes = 6;  // Available RAM
+    float cpu_usage_percent = 7;   // CPU utilization (if available)
+    
+    // Network status
+    bool wifi_connected = 8;       // WiFi connection status
+    bool mqtt_connected = 9;       // MQTT broker connection
+    int32 wifi_signal_strength = 10; // WiFi RSSI
+    uint32 network_reconnects = 11;   // Connection recovery count
+}
+
+// Error and diagnostic information
+message ErrorReport {
+    Timestamp timestamp = 1;
+    
+    // Error identification
+    string error_code = 2;         // Error code identifier
+    string error_message = 3;      // Human readable description
+    string severity_level = 4;     // "EMERG", "ALERT", "CRIT", "ERROR", "WARN"
+    
+    // Error context
+    uint32 occurrence_count = 5;   // Times this error occurred
+    uint32 error_duration_ms = 6;  // How long error persisted
+    string system_context = 7;     // System state when error occurred
+}
+
+// Configuration and settings status
+message ConfigStatus {
+    Timestamp timestamp = 1;
+    
+    // Pressure configuration
+    float a1_max_psi = 2;          // A1 sensor maximum pressure
+    float a5_max_psi = 3;          // A5 sensor maximum pressure
+    float extend_pressure_limit = 4; // Extend operation pressure limit
+    float retract_pressure_limit = 5; // Retract operation pressure limit
+    
+    // Timing configuration
+    uint32 sequence_timeout_ms = 6;    // Sequence operation timeout
+    uint32 stability_time_ms = 7;      // Stability check time
+    uint32 debounce_time_ms = 8;       // Input debounce time
+    
+    // Safety configuration
+    bool manual_override_enabled = 9;  // Manual override available
+    bool pressure_monitoring_enabled = 10; // Pressure safety active
+    uint32 safety_check_interval_ms = 11;  // Safety check frequency
+}
+
+// Comprehensive telemetry message containing all data
+message ControllerTelemetry {
+    Timestamp timestamp = 1;
+    uint32 message_sequence = 2;   // Message sequence number
+    string message_type = 3;       // "FULL", "PRESSURE", "RELAY", etc.
+    
+    // Telemetry data sections
+    PressureReading pressure = 10;
+    RelayStatus relay = 11;
+    InputStatus input = 12;
+    SequenceStatus sequence = 13;
+    SystemHealth system = 14;
+    ErrorReport error = 15;
+    ConfigStatus config = 16;
+}
+
+// Command message structure (for future bidirectional communication)
+message ControllerCommand {
+    Timestamp timestamp = 1;
+    uint32 command_id = 2;         // Unique command identifier
+    string command_type = 3;       // "RELAY_CONTROL", "SEQUENCE_START", etc.
+    
+    // Command parameters
+    map<string, string> parameters = 10;  // Command parameters
+    bytes command_data = 11;              // Binary command data
+    
+    // Response requirements
+    bool requires_response = 20;   // Command needs acknowledgment
+    uint32 timeout_ms = 21;        // Command execution timeout
+}
+
+// Response message structure (for command acknowledgment)
+message ControllerResponse {
+    Timestamp timestamp = 1;
+    uint32 command_id = 2;         // Original command ID
+    bool success = 3;              // Command execution result
+    string result_message = 4;     // Human readable result
+    string error_code = 5;         // Error code if failed
+    
+    // Response data
+    map<string, string> result_data = 10;  // Result parameters
+    bytes response_data = 11;              // Binary response data
+}

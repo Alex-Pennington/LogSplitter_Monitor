@@ -34,6 +34,10 @@ void SerialBridge::begin() {
 
 void SerialBridge::setNetworkManager(NetworkManager* network) {
     networkManager = network;
+    
+    // Initialize protobuf decoder with network manager
+    protobufDecoder.begin(network);
+    logBridgeActivity(LOG_INFO, "Protobuf decoder initialized");
 }
 
 void SerialBridge::update() {
@@ -51,7 +55,7 @@ void SerialBridge::update() {
             // For now, assume fixed-size messages or implement proper framing
             if (bufferIndex >= PROTOBUF_MIN_MESSAGE_SIZE) {
                 // Process the complete protobuf message
-                processProtobufMessage(messageBuffer, bufferIndex);
+                processProtobufMessage(reinterpret_cast<uint8_t*>(messageBuffer), bufferIndex);
                 
                 // Reset buffer for next message
                 bufferIndex = 0;
@@ -87,17 +91,25 @@ void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
     
     logBridgeActivity(LOG_DEBUG, "Received protobuf message: %d bytes", length);
     
-    // Forward protobuf message to MQTT
+    // Forward raw protobuf message to MQTT
     if (networkManager && networkManager->isMQTTConnected()) {
         // Publish raw protobuf data to controller/protobuff topic
-        bool success = networkManager->publishBinary("controller/protobuff", data, length);
+        bool rawSuccess = networkManager->publishBinary("controller/protobuff", data, length);
         
-        if (success) {
+        if (rawSuccess) {
             messagesForwarded++;
-            logBridgeActivity(LOG_DEBUG, "Forwarded protobuf to MQTT: %d bytes", length);
+            logBridgeActivity(LOG_DEBUG, "Forwarded raw protobuf to MQTT: %d bytes", length);
         } else {
             messagesDropped++;
-            logBridgeActivity(LOG_WARNING, "Failed to forward protobuf message to MQTT");
+            logBridgeActivity(LOG_WARNING, "Failed to forward raw protobuf message to MQTT");
+        }
+        
+        // Decode protobuf and publish individual topics
+        bool decodeSuccess = protobufDecoder.decodeProtobufMessage(data, length);
+        if (decodeSuccess) {
+            logBridgeActivity(LOG_DEBUG, "Decoded protobuf to individual MQTT topics");
+        } else {
+            logBridgeActivity(LOG_WARNING, "Failed to decode protobuf message");
         }
     } else {
         messagesDropped++;
