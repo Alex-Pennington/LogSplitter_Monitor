@@ -1,2 +1,4 @@
 # LogSplitter Protobuf Ingestion Requirements
-paho-mqtt==1.6.1
+paho-mqtt
+protobuf>=4.0.0
+grpcio-tools==1.6.1
