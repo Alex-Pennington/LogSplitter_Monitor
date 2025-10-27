@@ -11,6 +11,9 @@ SerialBridge::SerialBridge()
     , criticalMessages(0)
     , parseErrors(0)
     , messagesDropped(0)
+    , windowedReceived(0)
+    , windowedForwarded(0)
+    , windowStartTime(millis())
     , bufferIndex(0)
     , expectedMessageSize(0)
     , lastPublishTime(0)
@@ -31,6 +34,26 @@ void SerialBridge::begin() {
     
     bridgeConnected = true;
     logBridgeActivity(LOG_INFO, "Serial bridge initialized on Serial1 at %d baud", SERIAL_BRIDGE_BAUD);
+}
+
+void SerialBridge::checkAndResetWindow() {
+    unsigned long currentTime = millis();
+    
+    // Check if window has expired (handle overflow)
+    bool windowExpired = false;
+    if (currentTime >= windowStartTime) {
+        windowExpired = (currentTime - windowStartTime) >= WINDOW_DURATION_MS;
+    } else {
+        // Handle millis() overflow (happens every ~49 days)
+        windowExpired = ((0xFFFFFFFF - windowStartTime) + currentTime) >= WINDOW_DURATION_MS;
+    }
+    
+    if (windowExpired) {
+        windowedReceived = 0;
+        windowedForwarded = 0;
+        windowStartTime = currentTime;
+        logBridgeActivity(LOG_DEBUG, "5-minute traffic window reset");
+    }
 }
 
 void SerialBridge::setNetworkManager(NetworkManager* network) {
@@ -122,7 +145,11 @@ void SerialBridge::update() {
 void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
     if (length == 0) return;
     
+    // Check and reset 5-minute window if needed
+    checkAndResetWindow();
+    
     messagesReceived++;
+    windowedReceived++;
     lastMessageTime = millis();
     
     logBridgeActivity(LOG_DEBUG, "Received protobuf message: %d bytes", length);
@@ -134,6 +161,7 @@ void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
         
         if (rawSuccess) {
             messagesForwarded++;
+            windowedForwarded++;
             logBridgeActivity(LOG_DEBUG, "Forwarded raw protobuf to MQTT: %d bytes", length);
         } else {
             messagesDropped++;

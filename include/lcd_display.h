@@ -138,6 +138,11 @@ public:
      * @return true if backlight is enabled
      */
     bool isBacklightEnabled() const { return backlightEnabled; }
+    
+    /**
+     * Update spinner animation
+     */
+    void updateSpinner();
 
 private:
     uint8_t i2cAddress;             // I2C address
@@ -153,6 +158,10 @@ private:
     String line2Content;
     String line3Content;
     String line4Content;
+    
+    // LCD spinner animation
+    uint8_t spinnerFrame;
+    unsigned long lastSpinnerTime;
     
     // LCD command constants for HD44780 controller
     static const uint8_t LCD_CLEARDISPLAY = 0x01;
@@ -259,6 +268,12 @@ private:
      * @param currentContent Current content reference
      */
     void updateLineIfChanged(uint8_t line, const String& content, String& currentContent);
+    
+    /**
+     * Get current spinner character
+     * @return Spinner character (-, /, |, \)
+     */
+    char getSpinnerChar();
     
     /**
      * Set cursor to beginning of line

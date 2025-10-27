@@ -53,6 +53,8 @@ public:
     bool isConnected() const { return bridgeConnected; }
     unsigned long getMessagesReceived() const { return messagesReceived; }
     unsigned long getMessagesForwarded() const { return messagesForwarded; }
+    unsigned long getWindowedReceived() const { return windowedReceived; }
+    unsigned long getWindowedForwarded() const { return windowedForwarded; }
     unsigned long getLastMessageTime() const { return lastMessageTime; }
     TelemetryState getTelemetryState() const { return telemetryState; }
     
@@ -90,6 +92,12 @@ private:
     unsigned long parseErrors;
     unsigned long messagesDropped;  // Rate limited messages
     
+    // 5-minute windowed statistics
+    unsigned long windowedReceived;
+    unsigned long windowedForwarded;
+    unsigned long windowStartTime;
+    static const unsigned long WINDOW_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    
     // Rate limiting
     unsigned long lastPublishTime;
     unsigned long burstStartTime;
@@ -103,6 +111,7 @@ private:
     // Message processing
     void processProtobufMessage(uint8_t* data, size_t length);  // NEW: Protobuf handler
     void processMessage(const String& message);                 // LEGACY: Text handler
+    void checkAndResetWindow();                                 // Window management
     bool parseStructuredMessage(const String& message, unsigned long& timestamp, 
                                String& level, String& content);
     void handleTelemetryMessage(unsigned long timestamp, const String& level, 

@@ -23,11 +23,25 @@ Fuel: 45.2 gallons
 12.3V 45mA S1:123→120
 ```
 
-**Traffic Display Format**: `S1:{received}→{forwarded}`
-- `S1:` - Serial1 interface identifier
-- `{received}` - Total protobuf messages received from Controller
-- `→` - Visual arrow indicating flow direction
-- `{forwarded}` - Total messages successfully forwarded to MQTT
+**Traffic Display Format**: `S1:{received}/{forwarded}` (5-minute window)
+- `S1:` - Serial1 interface identifier  
+- `{received}` - Protobuf messages received from Controller in last 5 minutes
+- `/` - Separator indicating received/forwarded ratio
+- `{forwarded}` - Messages successfully forwarded to MQTT in last 5 minutes
+
+## 5-Minute Rolling Window Feature
+
+### How It Works
+- **Window Duration**: Exactly 5 minutes (300,000 milliseconds)
+- **Auto-Reset**: Counters automatically reset to 0 every 5 minutes
+- **Real-time Activity**: Shows recent protobuf bridge activity, not session totals
+- **Overflow Protection**: Handles Arduino millis() overflow (every ~49 days)
+
+### Benefits of Windowed Display
+- **Current Status**: Shows if the bridge is actively working right now
+- **Problem Detection**: Quickly identify if traffic has stopped recently
+- **Rate Monitoring**: Understand current message frequency
+- **Clean Numbers**: Counters stay manageable (no huge session totals)
 
 ## Traffic Statistics
 

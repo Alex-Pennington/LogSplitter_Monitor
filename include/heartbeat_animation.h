@@ -5,23 +5,19 @@
 
 /**
  * @class HeartbeatAnimation
- * @brief Manages heartbeat animation on Arduino R4 WiFi LED matrix
+ * @brief Manages spinner animation on Arduino R4 WiFi LED matrix
  * 
- * Provides a pulsing heartbeat animation with configurable heart rate,
- * brightness control, and enable/disable functionality.
+ * Provides a simple spinning activity indicator in the top right corner
+ * of the LED matrix, updating every second.
  */
 class HeartbeatAnimation {
 private:
-  uint8_t currentFrame;
-  unsigned long lastFrameTime;
   bool isEnabled;
-  uint16_t currentBPM;
   uint8_t currentBrightness;
   
-  // Frame durations for heartbeat rhythm (milliseconds)
-  unsigned long frameDurations[4];
-  
-  void calculateFrameTiming();
+  // Spinner animation in top right corner
+  uint8_t spinnerFrame;
+  unsigned long lastSpinnerTime;
   
 public:
   HeartbeatAnimation();
@@ -37,12 +33,12 @@ public:
   void update();
   
   /**
-   * Enable heartbeat animation
+   * Enable spinner animation
    */
   void enable();
   
   /**
-   * Disable heartbeat animation and clear display
+   * Disable spinner animation and clear display
    */
   void disable();
   
@@ -59,18 +55,6 @@ public:
   bool getEnabled() const;
   
   /**
-   * Set heartbeat rate
-   * @param bpm Beats per minute (30-200 typical range)
-   */
-  void setHeartRate(uint16_t bpm);
-  
-  /**
-   * Get current heart rate
-   * @return Current BPM setting
-   */
-  uint16_t getHeartRate() const;
-  
-  /**
    * Get current brightness
    * @return Current brightness (0-255)
    */
@@ -80,12 +64,12 @@ public:
    * Clear the LED matrix display
    */
   void clear();
-  
+
+private:
   /**
-   * Display a specific frame (for testing/debugging)
-   * @param frameNumber Frame to display (0-3)
+   * Display current spinner frame
    */
-  void displayFrame(uint8_t frameNumber);
+  void displaySpinner();
 };
 
 #endif // HEARTBEAT_ANIMATION_H
