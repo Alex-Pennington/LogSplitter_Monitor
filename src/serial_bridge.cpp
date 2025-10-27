@@ -12,6 +12,7 @@ SerialBridge::SerialBridge()
     , parseErrors(0)
     , messagesDropped(0)
     , bufferIndex(0)
+    , expectedMessageSize(0)
     , lastPublishTime(0)
     , burstStartTime(0)
     , burstCount(0) {
@@ -34,36 +35,58 @@ void SerialBridge::begin() {
 
 void SerialBridge::setNetworkManager(NetworkManager* network) {
     networkManager = network;
+    
+    // Note: Protobuf decoder is available but not used for pass-through mode
+    // protobufDecoder.begin(network);
+    logBridgeActivity(LOG_INFO, "Network manager configured for binary pass-through");
 }
 
 void SerialBridge::update() {
     if (!bridgeConnected) return;
     
-    // Read available data from Serial1 (now protobuf binary data)
+    // Read available data from Serial1 (size-prefixed binary protobuf data)
     while (Serial1.available()) {
         uint8_t byte = Serial1.read();
         
-        // Add byte to buffer if there's space
-        if (bufferIndex < sizeof(messageBuffer) - 1) {
-            messageBuffer[bufferIndex++] = byte;
+        // State machine for size-prefixed message parsing
+        if (bufferIndex == 0) {
+            // First byte is the message size (including header + payload)
+            expectedMessageSize = byte;
             
-            // Check if we have a complete protobuf message
-            // For now, assume fixed-size messages or implement proper framing
-            if (bufferIndex >= PROTOBUF_MIN_MESSAGE_SIZE) {
-                // Process the complete protobuf message
-                processProtobufMessage(messageBuffer, bufferIndex);
+            // Validate size is within reasonable bounds (7-33 bytes as per API)
+            if (expectedMessageSize < PROTOBUF_MIN_MESSAGE_SIZE || expectedMessageSize > PROTOBUF_MAX_MESSAGE_SIZE) {
+                parseErrors++;
+                logBridgeActivity(LOG_WARNING, "Invalid message size: %d bytes", expectedMessageSize);
+                continue; // Skip this byte and try next
+            }
+            
+            // Store the size byte
+            messageBuffer[bufferIndex++] = byte;
+        }
+        else {
+            // Add byte to buffer if there's space
+            if (bufferIndex < sizeof(messageBuffer) - 1) {
+                messageBuffer[bufferIndex++] = byte;
                 
-                // Reset buffer for next message
+                // Check if we have received the complete message
+                if (bufferIndex >= expectedMessageSize) {
+                    // Process the complete protobuf message (including size byte)
+                    processProtobufMessage(reinterpret_cast<uint8_t*>(messageBuffer), bufferIndex);
+                    
+                    // Reset buffer for next message
+                    bufferIndex = 0;
+                    expectedMessageSize = 0;
+                    memset(messageBuffer, 0, sizeof(messageBuffer));
+                }
+            }
+            // Buffer overflow - reset and log error
+            else {
+                parseErrors++;
+                logBridgeActivity(LOG_ERROR, "Protobuf buffer overflow, discarding data");
                 bufferIndex = 0;
+                expectedMessageSize = 0;
                 memset(messageBuffer, 0, sizeof(messageBuffer));
             }
-        }
-        // Buffer overflow - reset and log error
-        else {
-            parseErrors++;
-            logBridgeActivity(LOG_ERROR, "Protobuf buffer overflow, discarding data");
-            bufferIndex = 0;
-            memset(messageBuffer, 0, sizeof(messageBuffer));
         }
     }
     
@@ -77,6 +100,23 @@ void SerialBridge::update() {
             lastTimeoutLog = millis();
         }
     }
+    
+    // Check for incomplete message timeout (reset partial message after 1 second)
+    static unsigned long lastByteTime = 0;
+    if (bufferIndex > 0) {
+        if (lastByteTime == 0) {
+            lastByteTime = millis();
+        } else if (millis() - lastByteTime > 1000) {
+            logBridgeActivity(LOG_WARNING, "Incomplete message timeout, discarding %d bytes", bufferIndex);
+            bufferIndex = 0;
+            expectedMessageSize = 0;
+            memset(messageBuffer, 0, sizeof(messageBuffer));
+            parseErrors++;
+            lastByteTime = 0;
+        }
+    } else {
+        lastByteTime = 0;
+    }
 }
 
 void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
@@ -87,17 +127,25 @@ void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
     
     logBridgeActivity(LOG_DEBUG, "Received protobuf message: %d bytes", length);
     
-    // Forward protobuf message to MQTT
+    // Forward complete raw protobuf message (including size byte) to MQTT
     if (networkManager && networkManager->isMQTTConnected()) {
         // Publish raw protobuf data to controller/protobuff topic
-        bool success = networkManager->publishBinary("controller/protobuff", data, length);
+        bool rawSuccess = networkManager->publishBinary("controller/protobuff", data, length);
         
-        if (success) {
+        if (rawSuccess) {
             messagesForwarded++;
-            logBridgeActivity(LOG_DEBUG, "Forwarded protobuf to MQTT: %d bytes", length);
+            logBridgeActivity(LOG_DEBUG, "Forwarded raw protobuf to MQTT: %d bytes", length);
         } else {
             messagesDropped++;
-            logBridgeActivity(LOG_WARNING, "Failed to forward protobuf message to MQTT");
+            logBridgeActivity(LOG_WARNING, "Failed to forward raw protobuf message to MQTT");
+        }
+        
+        // Optional: Decode protobuf for individual topics (if needed)
+        // For now, just pass through the binary data as requested
+        if (length >= 7) { // Minimum valid message size (1 size + 6 header)
+            uint8_t msgSize = data[0];
+            uint8_t msgType = data[1];
+            logBridgeActivity(LOG_DEBUG, "Message type: 0x%02X, size: %d", msgType, msgSize);
         }
     } else {
         messagesDropped++;
@@ -399,21 +447,22 @@ void SerialBridge::getStatistics(char* buffer, size_t bufferSize) {
     snprintf(buffer, bufferSize,
         "Serial Bridge Stats:\n"
         "Connected: %s\n"
-        "Telemetry State: %s\n"
+        "Protobuf Mode: Size-Prefixed Binary\n"
         "Messages Received: %lu\n"
         "Messages Forwarded: %lu\n"
-        "Messages Dropped (Rate Limited): %lu\n"
-        "Critical Messages: %lu\n"
+        "Messages Dropped: %lu\n"
         "Parse Errors: %lu\n"
+        "Buffer State: %d/%d bytes\n"
+        "Expected Size: %d bytes\n"
         "Last Message: %lu ms ago",
         bridgeConnected ? "YES" : "NO",
-        (telemetryState == TELEMETRY_ENABLED) ? "ENABLED" : 
-        (telemetryState == TELEMETRY_DISABLED) ? "DISABLED" : "UNKNOWN",
         messagesReceived,
         messagesForwarded,
         messagesDropped,
-        criticalMessages,
         parseErrors,
+        bufferIndex,
+        sizeof(messageBuffer),
+        expectedMessageSize,
         lastMessageTime > 0 ? millis() - lastMessageTime : 0
     );
 }

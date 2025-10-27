@@ -4,13 +4,15 @@
 #include "constants.h"
 #include "network_manager.h"
 #include "logger.h"
+#include "protobuf_decoder.h"
 
 // Serial bridge configuration
 #define SERIAL_BRIDGE_BAUD 115200
 #define BRIDGE_BUFFER_SIZE 512
 #define MAX_MESSAGE_LENGTH 256
 #define BRIDGE_TIMEOUT_MS 1000
-#define PROTOBUF_MIN_MESSAGE_SIZE 8    // Minimum protobuf message size
+#define PROTOBUF_MIN_MESSAGE_SIZE 7     // Minimum protobuf message size (1 size + 6 header)
+#define PROTOBUF_MAX_MESSAGE_SIZE 33    // Maximum protobuf message size per API
 
 // Rate limiting configuration
 #define BRIDGE_RATE_LIMIT_MS 100          // Minimum 100ms between MQTT publishes
@@ -56,9 +58,25 @@ public:
     
     // Statistics
     void getStatistics(char* buffer, size_t bufferSize);
+
+    /*
+     * OPERATION MODE: Binary Pass-Through
+     * 
+     * This SerialBridge implementation reads size-prefixed binary protobuf messages
+     * from Serial1 and forwards them directly to MQTT topic "controller/protobuff"
+     * without modification or decoding.
+     * 
+     * Message Format (per LogSplitter Controller Binary Telemetry API):
+     * [SIZE_BYTE][MESSAGE_TYPE][SEQUENCE_ID][TIMESTAMP][PAYLOAD...]
+     * 
+     * Size range: 7-33 bytes total (including size byte)
+     * Baud rate: 115200 (fixed)
+     * Protocol: Size-prefixed binary frames
+     */
     
 private:
     NetworkManager* networkManager;
+    ProtobufDecoder protobufDecoder;
     
     // Connection state
     bool bridgeConnected;
@@ -80,6 +98,7 @@ private:
     // Message buffer
     char messageBuffer[BRIDGE_BUFFER_SIZE];
     size_t bufferIndex;
+    uint8_t expectedMessageSize;  // Expected size for current message being received
     
     // Message processing
     void processProtobufMessage(uint8_t* data, size_t length);  // NEW: Protobuf handler

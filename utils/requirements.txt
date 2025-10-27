@@ -1,4 +1,12 @@
-# LogSplitter Protobuf Ingestion Requirements
-paho-mqtt
+# LogSplitter MQTT Protobuf Decoder Dependencies
+paho-mqtt>=1.6.0
 protobuf>=4.0.0
-grpcio-tools==1.6.1
+grpcio-tools>=1.6.1
+
+# For MQTT client communication and protobuf message parsing
+
+# Optional dependencies for advanced features:
+# numpy>=1.21.0         # For advanced data analysis
+# matplotlib>=3.5.0     # For plotting telemetry data  
+# influxdb-client>=1.31.0  # For InfluxDB time series storage
+# pandas>=1.3.0         # For data processing and analysis
