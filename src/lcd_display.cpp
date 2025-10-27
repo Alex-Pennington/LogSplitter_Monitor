@@ -171,36 +171,18 @@ void LCDDisplay::updateSensorReadings(float localTemp, float fuelGallons, float 
     updateLineIfChanged(2, fuelContent, line3Content);
 }
 
-void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adcVoltage) {
+void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adcVoltage, uint32_t serialMsgCount, uint32_t mqttMsgCount) {
     if (!initialized || !displayEnabled) return;
     
-    // Line 4: Power and ADC data - "12.3V 45mA ADC:1.23"
+    // Line 4: Serial1→MQTT traffic statistics - "Serial1: 123/120 msgs"
     String content = "";
     
-    // Bus voltage
-    if (voltage >= 0) {
-        content += String(voltage, 1) + "V ";
+    // Serial1→MQTT traffic statistics (prominent display)
+    content += "Serial1: ";
+    if (serialMsgCount > 0 || mqttMsgCount > 0) {
+        content += String(serialMsgCount) + "/" + String(mqttMsgCount) + " msgs";
     } else {
-        content += "---V ";
-    }
-    
-    // Current (show in mA, limit to 2 digits)
-    if (current > -999.0) {  // Show current if it's a valid reading (positive or negative)
-        if (abs(current) < 100) {
-            content += String(current, 0) + "mA ";
-        } else {
-            content += String(current, 0) + "mA ";
-        }
-    } else {
-        content += "---mA ";
-    }
-    
-    // ADC voltage
-    content += "ADC:";
-    if (adcVoltage != -999.0) {
-        content += String(adcVoltage, 2);
-    } else {
-        content += "---";
+        content += "0/0 msgs";
     }
     
     // Pad or truncate to exactly 20 characters

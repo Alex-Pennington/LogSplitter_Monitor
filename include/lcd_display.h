@@ -74,7 +74,7 @@ public:
      * @param current Current from power sensor in mA
      * @param adcVoltage ADC voltage reading
      */
-    void updateAdditionalSensors(float voltage, float current, float adcVoltage);
+    void updateAdditionalSensors(float voltage, float current, float adcVoltage, uint32_t serialMsgCount = 0, uint32_t mqttMsgCount = 0);
     
     /**
      * Display error message (line 4)

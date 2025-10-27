@@ -21,6 +21,7 @@ SerialBridge serialBridge;
 // Global pointer for external access
 NetworkManager* g_networkManager = &networkManager;
 LCDDisplay* g_lcdDisplay = &lcdDisplay;
+SerialBridge* g_serialBridge = &serialBridge;
 MCP9600Sensor* g_mcp9600Sensor = nullptr; // Will be set by monitor system
 
 // Global debug flag
