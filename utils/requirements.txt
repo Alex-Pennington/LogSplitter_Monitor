@@ -3,6 +3,14 @@ paho-mqtt>=1.6.0
 protobuf>=4.0.0
 grpcio-tools>=1.6.1
 
+# Web Dashboard Dependencies
+flask>=2.3.0
+flask-socketio>=5.3.0
+python-socketio>=5.8.0
+
+# Configuration Management
+python-dotenv>=1.0.0
+
 # For MQTT client communication and protobuf message parsing
 
 # Optional dependencies for advanced features:

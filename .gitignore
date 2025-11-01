@@ -6,3 +6,15 @@
 
 # Arduino secrets file containing WiFi and MQTT credentials
 include/arduino_secrets.h
+
+# Python virtual environment
+utils/venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Database files (local working copies)
+*.db
+*.db-shm
+*.db-wal

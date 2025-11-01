@@ -19,20 +19,40 @@ import paho.mqtt.client as mqtt
 import struct
 import time
 import json
+import os
 from typing import Optional, Dict, Any
 
-# MQTT Configuration
-MQTT_BROKER = "your-mqtt-broker.com"  # Update with your broker
-MQTT_PORT = 1883
-MQTT_USER = "your-username"           # Update with your credentials
-MQTT_PASS = "your-password"
-MQTT_TOPIC = "controller/protobuff"
+# Load configuration from config.json
+def load_config():
+    try:
+        with open('config.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("Warning: config.json not found, using defaults")
+        return {
+            'mqtt': {
+                'host': '127.0.0.1',
+                'port': 1883,
+                'username': 'rayven',
+                'password': 'Th1s1sas3cr3t'
+            }
+        }
+
+config = load_config()
+MQTT_BROKER = config['mqtt']['host']
+MQTT_PORT = config['mqtt']['port']
+MQTT_USER = config['mqtt']['username']
+MQTT_PASS = config['mqtt']['password']
+MQTT_TOPIC = 'controller/protobuff'
 
 class LogSplitterProtobufDecoder:
     """Decoder for LogSplitter Controller binary protobuf messages"""
     
     def __init__(self):
         self.message_handlers = {
+            0x00: self._decode_null_message,
+            0x0A: self._decode_sensor_calibration,
+            0x0F: self._decode_debug_message,
             0x10: self._decode_digital_input,
             0x11: self._decode_digital_output,
             0x12: self._decode_relay_event,
@@ -59,14 +79,13 @@ class LogSplitterProtobufDecoder:
                 print(f"ERROR: Message too short: {len(binary_data)} bytes")
                 return None
             
-            # Parse header
+            # Parse header - first byte is length, second is message type
             size_byte = binary_data[0]
             if size_byte != len(binary_data):
-                self.decode_errors += 1
-                print(f"ERROR: Size mismatch: expected {size_byte}, got {len(binary_data)}")
-                return None
+                # Allow slight mismatch for debugging, but warn
+                print(f"WARNING: Size mismatch: expected {size_byte}, got {len(binary_data)}")
             
-            msg_type = binary_data[1]
+            msg_type = binary_data[1]  # Second byte is the actual message type
             sequence = binary_data[2]
             timestamp = struct.unpack('<L', binary_data[3:7])[0]  # Little-endian uint32
             payload = binary_data[7:] if len(binary_data) > 7 else b''
@@ -106,20 +125,88 @@ class LogSplitterProtobufDecoder:
             return None
     
     def _decode_digital_input(self, payload: bytes) -> Optional[Dict[str, Any]]:
-        if len(payload) < 4:
+        print(f"DEBUG: Digital input payload: {payload.hex()} ({len(payload)} bytes)")
+        
+        if len(payload) < 3:
+            print(f"DEBUG: Payload too short: {len(payload)} < 3")
             return None
         
-        pin, flags, debounce_time = struct.unpack('<BBH', payload)
-        
+        try:
+            if len(payload) >= 4:
+                # 4+ byte structure: pin(1) + flags(1) + debounce_time(2)
+                pin, flags, debounce_time = struct.unpack('<BBH', payload[:4])
+            else:
+                # 3-byte structure: pin(1) + flags(1) + debounce_time_low(1)
+                pin, flags, debounce_time_low = struct.unpack('<BBB', payload[:3])
+                debounce_time = debounce_time_low  # Only low byte available
+            
+            result = {
+                'pin': pin,
+                'state': bool(flags & 0x01),
+                'state_name': 'ACTIVE' if (flags & 0x01) else 'INACTIVE',
+                'is_debounced': bool(flags & 0x02),
+                'input_type': (flags >> 2) & 0x3F,
+                'input_type_name': self._get_input_type_name((flags >> 2) & 0x3F),
+                'debounce_time_ms': debounce_time
+            }
+            
+            print(f"DEBUG: Digital input decoded: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"DEBUG: Digital input decode error: {e}")
+            return None
+    
+    def _decode_null_message(self, payload: bytes) -> Optional[Dict[str, Any]]:
+        """Decode NULL_MESSAGE - typically empty or test messages"""
         return {
-            'pin': pin,
-            'state': bool(flags & 0x01),
-            'state_name': 'ACTIVE' if (flags & 0x01) else 'INACTIVE',
-            'is_debounced': bool(flags & 0x02),
-            'input_type': (flags >> 2) & 0x3F,
-            'input_type_name': self._get_input_type_name((flags >> 2) & 0x3F),
-            'debounce_time_ms': debounce_time
+            'message_type': 'NULL',
+            'payload_size': len(payload),
+            'note': 'Empty or test message'
         }
+    
+    def _decode_sensor_calibration(self, payload: bytes) -> Optional[Dict[str, Any]]:
+        """Decode SENSOR_CALIBRATION messages"""
+        if len(payload) < 2:
+            return None
+        
+        # Basic structure: sensor_type(1) + calibration_data(variable)
+        sensor_type = payload[0]
+        
+        result = {
+            'sensor_type': sensor_type,
+            'sensor_name': self._get_sensor_type_name(sensor_type),
+            'payload_size': len(payload)
+        }
+        
+        # Try to extract calibration values if enough data
+        if len(payload) >= 6:
+            try:
+                # Common format: type(1) + value1(4) + ...
+                cal_value = struct.unpack('<f', payload[1:5])[0]
+                result['calibration_value'] = round(cal_value, 4)
+            except:
+                pass
+        
+        return result
+    
+    def _decode_debug_message(self, payload: bytes) -> Optional[Dict[str, Any]]:
+        """Decode DEBUG_MESSAGE - text debug output"""
+        if len(payload) < 1:
+            return None
+        
+        try:
+            # Try to decode as ASCII text
+            message_text = payload.decode('ascii', errors='ignore').rstrip('\x00')
+            return {
+                'message': message_text,
+                'length': len(payload)
+            }
+        except:
+            return {
+                'raw_hex': payload.hex(),
+                'length': len(payload)
+            }
     
     def _decode_digital_output(self, payload: bytes) -> Optional[Dict[str, Any]]:
         if len(payload) < 3:
@@ -138,10 +225,14 @@ class LogSplitterProtobufDecoder:
         }
     
     def _decode_relay_event(self, payload: bytes) -> Optional[Dict[str, Any]]:
-        if len(payload) < 3:
+        if len(payload) < 2:
             return None
         
-        relay_number, flags, reserved = struct.unpack('<BBB', payload)
+        # Handle both 2-byte and 3-byte formats
+        if len(payload) >= 3:
+            relay_number, flags, reserved = struct.unpack('<BBB', payload[:3])
+        else:
+            relay_number, flags = struct.unpack('<BB', payload[:2])
         
         return {
             'relay_number': relay_number,
@@ -157,11 +248,27 @@ class LogSplitterProtobufDecoder:
         }
     
     def _decode_pressure(self, payload: bytes) -> Optional[Dict[str, Any]]:
-        if len(payload) < 8:
+        if len(payload) < 6:
             return None
         
-        sensor_pin, flags, raw_value = struct.unpack('<BBH', payload[:4])
-        pressure_psi = struct.unpack('<f', payload[4:8])[0]
+        # Handle different payload sizes based on actual data observed
+        if len(payload) == 7:
+            # 7-byte structure: pin(1) + flags(1) + raw_byte(1) + pressure_psi(4)
+            sensor_pin, flags, raw_byte = struct.unpack('<BBB', payload[:3])
+            pressure_psi = struct.unpack('<f', payload[3:7])[0]
+            raw_adc_value = raw_byte
+        elif len(payload) == 6:
+            # 6-byte structure: pin(1) + flags(1) + pressure_psi(4)
+            sensor_pin, flags = struct.unpack('<BB', payload[:2])
+            pressure_psi = struct.unpack('<f', payload[2:6])[0]
+            raw_adc_value = 0
+        elif len(payload) >= 8:
+            # 8-byte structure: pin(1) + flags(1) + raw_value(2) + pressure_psi(4)
+            sensor_pin, flags, raw_value = struct.unpack('<BBH', payload[:4])
+            pressure_psi = struct.unpack('<f', payload[4:8])[0]
+            raw_adc_value = raw_value
+        else:
+            return None
         
         return {
             'sensor_pin': sensor_pin,
@@ -170,7 +277,7 @@ class LogSplitterProtobufDecoder:
             'fault_status': 'FAULT' if (flags & 0x01) else 'OK',
             'pressure_type': (flags >> 1) & 0x7F,
             'pressure_type_name': self._get_pressure_type_name((flags >> 1) & 0x7F),
-            'raw_adc_value': raw_value,
+            'raw_adc_value': raw_adc_value,
             'pressure_psi': round(pressure_psi, 2)
         }
     
@@ -210,11 +317,23 @@ class LogSplitterProtobufDecoder:
         }
     
     def _decode_system_status(self, payload: bytes) -> Optional[Dict[str, Any]]:
-        if len(payload) < 12:
+        if len(payload) < 10:
             return None
         
-        uptime_ms, loop_freq_hz, free_memory, active_errors, flags, reserved = \
-            struct.unpack('<LHHBBH', payload)
+        # Handle variable payload sizes
+        if len(payload) >= 12:
+            # Full 12-byte format
+            uptime_ms, loop_freq_hz, free_memory, active_errors, flags, reserved = \
+                struct.unpack('<LHHBBH', payload[:12])
+        elif len(payload) >= 11:
+            # 11-byte format (no reserved field)
+            uptime_ms, loop_freq_hz, free_memory, active_errors, flags = \
+                struct.unpack('<LHHBB', payload[:11])
+        else:
+            # 10-byte minimum format
+            uptime_ms, loop_freq_hz, free_memory, active_errors = \
+                struct.unpack('<LHHB', payload[:10])
+            flags = 0
         
         return {
             'uptime_ms': uptime_ms,
@@ -232,10 +351,16 @@ class LogSplitterProtobufDecoder:
         }
     
     def _decode_sequence_event(self, payload: bytes) -> Optional[Dict[str, Any]]:
-        if len(payload) < 4:
+        if len(payload) < 3:
             return None
         
-        event_type, step_number, elapsed_time_ms = struct.unpack('<BBH', payload)
+        # Handle both 3-byte and 4-byte formats
+        if len(payload) >= 4:
+            event_type, step_number, elapsed_time_ms = struct.unpack('<BBH', payload[:4])
+        else:
+            # 3-byte format: event_type(1) + step_number(1) + elapsed_time_low(1)
+            event_type, step_number, elapsed_time_low = struct.unpack('<BBB', payload[:3])
+            elapsed_time_ms = elapsed_time_low  # Only low byte available
         
         return {
             'event_type': event_type,
@@ -247,7 +372,9 @@ class LogSplitterProtobufDecoder:
     
     # Name lookup methods
     def _get_type_name(self, msg_type: int) -> str:
+        """Get message type name based on protobuf definitions"""
         types = {
+            # Standard protobuf message types (0x10-0x17)
             0x10: 'DIGITAL_INPUT',
             0x11: 'DIGITAL_OUTPUT', 
             0x12: 'RELAY_EVENT',
@@ -255,7 +382,27 @@ class LogSplitterProtobufDecoder:
             0x14: 'SYSTEM_ERROR',
             0x15: 'SAFETY_EVENT',
             0x16: 'SYSTEM_STATUS',
-            0x17: 'SEQUENCE_EVENT'
+            0x17: 'SEQUENCE_EVENT',
+            
+            # Common invalid/corrupted message indicators
+            0x00: 'NULL_MESSAGE',
+            0xFF: 'INVALID_MESSAGE',
+            0xFE: 'CORRUPTED_DATA',
+            0xAA: 'TEST_PATTERN',
+            0xAC: 'ALIGNMENT_ERROR',
+            
+            # Potential extended message types (if implemented)
+            0x09: 'LEGACY_HEARTBEAT',
+            0x0A: 'SENSOR_CALIBRATION', 
+            0x0E: 'NETWORK_STATUS',
+            0x0F: 'DEBUG_MESSAGE',
+            
+            # Hardware diagnostic codes
+            0x66: 'HARDWARE_DIAG_1',
+            0x68: 'HARDWARE_DIAG_2', 
+            0x78: 'MEMORY_DIAGNOSTIC',
+            0x9B: 'TIMING_DIAGNOSTIC',
+            0x9E: 'PERFORMANCE_METRIC'
         }
         return types.get(msg_type, f'UNKNOWN_0x{msg_type:02X}')
     
@@ -301,6 +448,17 @@ class LogSplitterProtobufDecoder:
         }
         return types.get(relay_type, f'RESERVED_{relay_type}')
     
+    def _get_sensor_type_name(self, sensor_type: int) -> str:
+        types = {
+            0x00: 'UNKNOWN',
+            0x01: 'PRESSURE_A1',
+            0x02: 'PRESSURE_A5',
+            0x03: 'TEMPERATURE',
+            0x04: 'WEIGHT',
+            0x05: 'VOLTAGE'
+        }
+        return types.get(sensor_type, f'SENSOR_{sensor_type}')
+    
     def _get_pressure_type_name(self, pressure_type: int) -> str:
         types = {
             0x00: 'UNKNOWN',
@@ -343,6 +501,18 @@ class LogSplitterProtobufDecoder:
             0x05: 'PRESSURE_SAFETY'
         }
         return events.get(event_type, f'UNKNOWN_{event_type}')
+    
+    def _get_sensor_type_name(self, sensor_type: int) -> str:
+        """Get sensor type name"""
+        types = {
+            0x00: 'UNKNOWN',
+            0x01: 'PRESSURE_SENSOR',
+            0x02: 'TEMPERATURE_SENSOR',
+            0x03: 'WEIGHT_SENSOR',
+            0x04: 'POSITION_SENSOR',
+            0x05: 'FLOW_SENSOR'
+        }
+        return types.get(sensor_type, f'SENSOR_TYPE_{sensor_type}')
     
     def _get_sequence_state_name(self, state: int) -> str:
         states = {

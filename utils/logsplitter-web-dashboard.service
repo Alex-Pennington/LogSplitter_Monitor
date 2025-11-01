@@ -1,0 +1,24 @@
+[Unit]
+Description=LogSplitter Web Dashboard
+After=network.target logsplitter-protobuf-logger.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rayvn
+Group=rayvn
+WorkingDirectory=/home/rayvn/monitor/LogSplitter_Monitor/utils
+Environment=PATH=/home/rayvn/monitor/LogSplitter_Monitor/utils/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/rayvn/monitor/LogSplitter_Monitor/utils/venv/bin/python web_dashboard.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment=PYTHONPATH=/home/rayvn/monitor/LogSplitter_Monitor
+Environment=FLASK_ENV=production
+Environment=DATABASE_PATH=/home/rayvn/monitor/LogSplitter_Monitor/utils/logsplitter_telemetry.db
+
+[Install]
+WantedBy=multi-user.target
