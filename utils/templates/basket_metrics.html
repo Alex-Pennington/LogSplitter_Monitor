@@ -320,42 +320,21 @@
             </div>
             
             <div class="card">
-                <h2>🔄 Per Basket Cycle Analysis</h2>
-                <div id="perBasketCycleMetrics">
-                    <div class="metric-row">
-                        <span class="metric-label">Total Cycles</span>
-                        <span class="metric-value" id="perBasketTotalCycles">0</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">Completed</span>
-                        <span class="metric-value success" id="perBasketCompletedCycles">0</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">Short Strokes</span>
-                        <span class="metric-value warning" id="perBasketShortStrokes">0</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">Success Rate</span>
-                        <span class="metric-value" id="perBasketSuccessRate">0%</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
                 <h2>Exchange History</h2>
                 <table id="exchangeTable">
                     <thead>
                         <tr>
                             <th>Timestamp</th>
                             <th>Delta Fuel (Gallons)</th>
-                            <th>Starts</th>
-                            <th>Completes</th>
-                            <th>Aborts</th>
+                            <th>Total Cycles</th>
+                            <th>Completed</th>
+                            <th>Short Strokes</th>
+                            <th>Success Rate</th>
                         </tr>
                     </thead>
                     <tbody id="exchangeTableBody">
                         <tr>
-                            <td colspan="5" class="no-data">Select a date range and click "Load Metrics"</td>
+                            <td colspan="6" class="no-data">Select a date range and click "Load Metrics"</td>
                         </tr>
                     </tbody>
                 </table>
@@ -476,47 +455,6 @@
                 document.getElementById('manualMoves').textContent = 0;
             }
             
-            // Calculate per-basket cycle statistics
-            const totalExchanges = data.total_exchanges || 0;
-            const cyclesCompleted = data.cycles_completed || 0;
-            
-            // Calculate cycles per basket
-            let cyclesPerBasket = 0;
-            let completedPerBasket = 0;
-            let shortStrokesPerBasket = 0;
-            let successRate = 0;
-            
-            if (totalExchanges > 0) {
-                cyclesPerBasket = (cyclesCompleted / totalExchanges).toFixed(1);
-                
-                // Calculate from individual exchanges
-                if (data.recent_exchanges && data.recent_exchanges.length > 0) {
-                    let totalCyclesSum = 0;
-                    let completedCyclesSum = 0;
-                    
-                    data.recent_exchanges.forEach(exchange => {
-                        const starts = exchange.seq_starts || 0;
-                        const completes = exchange.seq_completes || 0;
-                        totalCyclesSum += starts;
-                        completedCyclesSum += completes;
-                    });
-                    
-                    cyclesPerBasket = (totalCyclesSum / totalExchanges).toFixed(1);
-                    completedPerBasket = (completedCyclesSum / totalExchanges).toFixed(1);
-                    shortStrokesPerBasket = ((totalCyclesSum - completedCyclesSum) / totalExchanges).toFixed(1);
-                    
-                    if (totalCyclesSum > 0) {
-                        successRate = ((completedCyclesSum / totalCyclesSum) * 100).toFixed(1);
-                    }
-                }
-            }
-            
-            // Update per-basket cycle metrics
-            document.getElementById('perBasketTotalCycles').textContent = cyclesPerBasket;
-            document.getElementById('perBasketCompletedCycles').textContent = completedPerBasket;
-            document.getElementById('perBasketShortStrokes').textContent = shortStrokesPerBasket;
-            document.getElementById('perBasketSuccessRate').textContent = successRate + '%';
-            
             // Update table
             const tbody = document.getElementById('exchangeTableBody');
             
@@ -530,18 +468,25 @@
                     const completes = exchange.seq_completes || 0;
                     const aborts = exchange.seq_aborts || 0;
                     
+                    // Calculate per-exchange cycle metrics
+                    const totalCycles = starts;
+                    const completedCycles = completes;
+                    const shortStrokes = starts - completes;
+                    const successRate = starts > 0 ? ((completes / starts) * 100).toFixed(1) : '0.0';
+                    
                     return `
                         <tr>
                             <td>${timestamp}</td>
                             <td>${deltaFuel}</td>
-                            <td>${starts}</td>
-                            <td>${completes}</td>
-                            <td>${aborts}</td>
+                            <td>${totalCycles}</td>
+                            <td>${completedCycles}</td>
+                            <td>${shortStrokes}</td>
+                            <td>${successRate}%</td>
                         </tr>
                     `;
                 }).join('');
             } else {
-                tbody.innerHTML = '<tr><td colspan="5" class="no-data">No basket exchanges found in selected date range</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="no-data">No basket exchanges found in selected date range</td></tr>';
             }
         }
         
