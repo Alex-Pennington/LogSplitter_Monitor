@@ -129,6 +129,118 @@
 				"focus": false,
 				"panel": "shared"
 			}
+		},
+		{
+			"label": "📡 Push to Both Remotes",
+			"type": "shell",
+			"command": "git push origin ${input:branchName}; git push gitmarv ${input:branchName}",
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"options": {
+				"shell": {
+					"executable": "powershell.exe",
+					"args": ["-Command"]
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
+		},
+		{
+			"label": "🐙 Push to GitHub Only",
+			"type": "shell",
+			"command": "git push origin ${input:branchName}",
+			"options": {
+				"shell": {
+					"executable": "powershell.exe",
+					"args": ["-Command"]
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
+		},
+		{
+			"label": "🏠 Push to GitMarv Only", 
+			"type": "shell",
+			"command": "git push gitmarv ${input:branchName}",
+			"options": {
+				"shell": {
+					"executable": "powershell.exe",
+					"args": ["-Command"]
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
+		},
+		{
+			"label": "🔗 Add GitMarv Remote",
+			"type": "shell",
+			"command": "git remote add gitmarv root@lilmarv.organicengineer.com:/opt/marvin/gitmarv/repositories/${input:repoName}.git",
+			"options": {
+				"shell": {
+					"executable": "powershell.exe",
+					"args": ["-Command"]
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
+		},
+		{
+			"label": "📋 Show Git Remotes",
+			"type": "shell",
+			"command": "git remote -v",
+			"options": {
+				"shell": {
+					"executable": "powershell.exe",
+					"args": ["-Command"]
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
+		}
+	],
+	"inputs": [
+		{
+			"id": "branchName",
+			"description": "Branch to push",
+			"default": "main",
+			"type": "promptString"
+		},
+		{
+			"id": "repoName", 
+			"description": "Repository name for GitMarv",
+			"type": "promptString"
 		}
 	]
 }
