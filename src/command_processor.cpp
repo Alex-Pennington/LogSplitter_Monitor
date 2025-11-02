@@ -1,6 +1,7 @@
 ﻿#include "command_processor.h"
 #include "lcd_display.h"
 #include "logger.h"
+#include "serial_bridge.h"
 #include <ctype.h>
 #include <string.h>
 #include <Wire.h>
@@ -8,6 +9,7 @@
 extern void debugPrintf(const char* fmt, ...);
 extern bool g_debugEnabled;
 extern LCDDisplay* g_lcdDisplay;
+extern SerialBridge serialBridge;
 
 // Static data for rate limiting
 static unsigned long lastCommandTime = 0;
@@ -137,6 +139,10 @@ bool CommandProcessor::processCommand(char* commandBuffer, bool fromMqtt, char* 
         char* param = strtok(NULL, " ");
         handleI2C(param, response, responseSize);
     }
+    else if (strcasecmp(cmd, "bridge") == 0) {
+        char* param = strtok(NULL, " ");
+        handleBridge(param, response, responseSize);
+    }
     else {
         snprintf(response, responseSize, "unknown command: %s", cmd);
         return false;
@@ -176,6 +182,10 @@ void CommandProcessor::handleHelp(char* response, size_t responseSize, bool from
         "i2c mux        - Scan through multiplexer channels\r\n"
         "i2c status     - Show I2C bus status\r\n"
         "i2c show       - Show detected I2C devices\r\n"
+        "bridge status  - Show Serial1 bridge status\r\n"
+        "bridge stats   - Show detailed bridge statistics\r\n"
+        "bridge telemetry [on|off] - Control telemetry forwarding\r\n"
+        "bridge reset   - Reset bridge statistics\r\n"
         "test network   - Test network connectivity\r\n"
         "syslog test    - Send test syslog message\r\n"
         "reset system   - Restart the device");
@@ -1221,5 +1231,57 @@ void CommandProcessor::handleI2C(char* param, char* response, size_t responseSiz
     }
     else {
         snprintf(response, responseSize, "unknown i2c command: %s", param);
+    }
+}
+
+void CommandProcessor::handleBridge(char* param, char* response, size_t responseSize) {
+    if (!param) {
+        const char* telemetryStr = "unknown";
+        switch (serialBridge.getTelemetryState()) {
+            case TELEMETRY_ENABLED: telemetryStr = "enabled"; break;
+            case TELEMETRY_DISABLED: telemetryStr = "disabled"; break;
+            case TELEMETRY_UNKNOWN: telemetryStr = "unknown"; break;
+        }
+        snprintf(response, responseSize, "bridge status: %s, received: %lu, forwarded: %lu, telemetry: %s",
+            serialBridge.isConnected() ? "connected" : "disconnected",
+            serialBridge.getMessagesReceived(),
+            serialBridge.getMessagesForwarded(),
+            telemetryStr);
+    }
+    else if (strcasecmp(param, "status") == 0) {
+        const char* telemetryStr = "unknown";
+        switch (serialBridge.getTelemetryState()) {
+            case TELEMETRY_ENABLED: telemetryStr = "enabled"; break;
+            case TELEMETRY_DISABLED: telemetryStr = "disabled"; break;
+            case TELEMETRY_UNKNOWN: telemetryStr = "unknown"; break;
+        }
+        snprintf(response, responseSize, "bridge status: %s, received: %lu, forwarded: %lu, telemetry: %s",
+            serialBridge.isConnected() ? "connected" : "disconnected",
+            serialBridge.getMessagesReceived(),
+            serialBridge.getMessagesForwarded(),
+            telemetryStr);
+    }
+    else if (strcasecmp(param, "stats") == 0) {
+        // Use the getStatistics method from SerialBridge
+        serialBridge.getStatistics(response, responseSize);
+    }
+    else if (strcasecmp(param, "telemetry") == 0) {
+        // Note: The SerialBridge class doesn't have telemetry control methods
+        // Telemetry state is read-only based on controller messages
+        const char* telemetryStr = "unknown";
+        switch (serialBridge.getTelemetryState()) {
+            case TELEMETRY_ENABLED: telemetryStr = "enabled"; break;
+            case TELEMETRY_DISABLED: telemetryStr = "disabled"; break;
+            case TELEMETRY_UNKNOWN: telemetryStr = "unknown"; break;
+        }
+        snprintf(response, responseSize, "telemetry state: %s (read-only, controlled by controller)", telemetryStr);
+    }
+    else if (strcasecmp(param, "reset") == 0) {
+        // Note: The SerialBridge class doesn't have a reset method
+        // Statistics are managed internally
+        snprintf(response, responseSize, "bridge reset not supported - statistics managed internally");
+    }
+    else {
+        snprintf(response, responseSize, "unknown bridge command: %s (use status/stats/telemetry)", param);
     }
 }

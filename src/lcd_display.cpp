@@ -4,7 +4,8 @@ extern void debugPrintf(const char* fmt, ...);
 
 LCDDisplay::LCDDisplay(uint8_t address, uint8_t cols, uint8_t rows) 
     : i2cAddress(address), columns(cols), rows(rows), initialized(false), 
-      displayEnabled(true), backlightEnabled(true), lastUpdate(0)
+      displayEnabled(true), backlightEnabled(true), lastUpdate(0),
+      spinnerFrame(0), lastSpinnerTime(0)
 {
     // Initialize content strings
     line1Content = "";
@@ -119,7 +120,10 @@ void LCDDisplay::sendData(uint8_t data) {
 void LCDDisplay::updateSystemStatus(uint8_t state, unsigned long uptime, bool wifiConnected, bool mqttConnected, bool syslogWorking) {
     if (!initialized || !displayEnabled) return;
     
-    // Format: "ST:RUN [WMS] 123.4h" (20 chars max)
+    // Update spinner animation
+    updateSpinner();
+    
+    // Format: "ST:RUN [WMS] 123.4h" (19 chars max + 1 spinner)
     String content = "ST:" + formatSystemState(state) + " [";
     content += wifiConnected ? "W" : "w";
     content += mqttConnected ? "M" : "m";
@@ -127,9 +131,12 @@ void LCDDisplay::updateSystemStatus(uint8_t state, unsigned long uptime, bool wi
     content += "] ";
     content += formatUptimeDecimal(uptime);
     
-    // Pad or truncate to exactly 20 characters
-    while (content.length() < 20) content += " ";
-    if (content.length() > 20) content = content.substring(0, 20);
+    // Pad or truncate to exactly 19 characters (leaving space for spinner)
+    while (content.length() < 19) content += " ";
+    if (content.length() > 19) content = content.substring(0, 19);
+    
+    // Add spinner character at position 20 (index 19)
+    content += getSpinnerChar();
     
     updateLineIfChanged(0, content, line1Content);
 }
@@ -171,21 +178,21 @@ void LCDDisplay::updateSensorReadings(float localTemp, float fuelGallons, float 
     updateLineIfChanged(2, fuelContent, line3Content);
 }
 
-void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adcVoltage) {
+void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adcVoltage, uint32_t serialMsgCount, uint32_t mqttMsgCount) {
     if (!initialized || !displayEnabled) return;
     
-    // Line 4: Power and ADC data - "12.3V 45mA ADC:1.23"
+    // Line 4: Power data and Serial1→MQTT traffic - "12.3V 45mA S1:123→45"
     String content = "";
     
-    // Bus voltage
+    // Bus voltage (reduced precision to save space)
     if (voltage >= 0) {
         content += String(voltage, 1) + "V ";
     } else {
         content += "---V ";
     }
     
-    // Current (show in mA, limit to 2 digits)
-    if (current > -999.0) {  // Show current if it's a valid reading (positive or negative)
+    // Current (show in mA, compact format)
+    if (current > -999.0) {
         if (abs(current) < 100) {
             content += String(current, 0) + "mA ";
         } else {
@@ -195,12 +202,11 @@ void LCDDisplay::updateAdditionalSensors(float voltage, float current, float adc
         content += "---mA ";
     }
     
-    // ADC voltage
-    content += "ADC:";
-    if (adcVoltage != -999.0) {
-        content += String(adcVoltage, 2);
+    // Serial1→MQTT traffic statistics (compact format)
+    if (serialMsgCount > 0 || mqttMsgCount > 0) {
+        content += "S1:" + String(serialMsgCount) + "/" + String(mqttMsgCount);
     } else {
-        content += "---";
+        content += "S1:0/0";
     }
     
     // Pad or truncate to exactly 20 characters
@@ -378,4 +384,19 @@ void LCDDisplay::printString(const String& str) {
     for (unsigned int i = 0; i < str.length(); i++) {
         sendData(str.charAt(i));
     }
+}
+
+void LCDDisplay::updateSpinner() {
+    unsigned long currentTime = millis();
+    
+    // Update spinner every 1000ms (1 second)
+    if (currentTime - lastSpinnerTime >= 1000) {
+        spinnerFrame = (spinnerFrame + 1) % 4;
+        lastSpinnerTime = currentTime;
+    }
+}
+
+char LCDDisplay::getSpinnerChar() {
+    const char spinnerChars[] = {'-', '/', '|', '\\'};
+    return spinnerChars[spinnerFrame % 4];
 }

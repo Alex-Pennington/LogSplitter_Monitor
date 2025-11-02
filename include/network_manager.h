@@ -37,6 +37,7 @@ public:
     // Publishing
     bool publish(const char* topic, const char* payload);
     bool publishWithRetain(const char* topic, const char* payload);
+    bool publishBinary(const char* topic, uint8_t* data, size_t length);  // NEW: Binary protobuf
     
     // Syslog functionality
     bool sendSyslog(const char* message, int level = 6);  // Default to INFO level

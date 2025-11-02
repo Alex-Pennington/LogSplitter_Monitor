@@ -8,6 +8,7 @@
 #include "lcd_display.h"
 #include "mcp9600_sensor.h"
 #include "logger.h"
+#include "serial_bridge.h"
 
 // Global instances
 NetworkManager networkManager;
@@ -15,10 +16,12 @@ TelnetServer telnetServer;
 MonitorSystem monitorSystem;
 CommandProcessor commandProcessor;
 LCDDisplay lcdDisplay;
+SerialBridge serialBridge;
 
 // Global pointer for external access
 NetworkManager* g_networkManager = &networkManager;
 LCDDisplay* g_lcdDisplay = &lcdDisplay;
+SerialBridge* g_serialBridge = &serialBridge;
 MCP9600Sensor* g_mcp9600Sensor = nullptr; // Will be set by monitor system
 
 // Global debug flag
@@ -84,6 +87,11 @@ void setup() {
     
     networkManager.setHostname("LogMonitor");
     telnetServer.setConnectionInfo("LogMonitor", "1.0.0");
+    
+    // Initialize Serial Bridge for controller communication
+    serialBridge.setNetworkManager(&networkManager);
+    serialBridge.begin();
+    debugPrintf("Serial bridge initialized\n");
     
     debugPrintf("Network initialization complete\n");
     currentSystemState = SYS_CONNECTING;
@@ -166,6 +174,9 @@ void loop() {
     if (sensorsInitialized) {
         monitorSystem.update();
     }
+    
+    // Update serial bridge (always active)
+    serialBridge.update();
     
     // Update telnet server
     if (networkManager.isWiFiConnected()) {

@@ -1,6 +1,7 @@
 #include "monitor_system.h"
 #include "network_manager.h"
 #include "lcd_display.h"
+#include "serial_bridge.h"
 #include "logger.h"
 #include <Arduino.h>
 #include <WiFiS3.h>
@@ -8,6 +9,7 @@
 extern void debugPrintf(const char* fmt, ...);
 extern NetworkManager* g_networkManager;
 extern LCDDisplay* g_lcdDisplay;
+extern SerialBridge* g_serialBridge;
 extern MCP9600Sensor* g_mcp9600Sensor;
 
 MonitorSystem::MonitorSystem() :
@@ -961,8 +963,16 @@ void MonitorSystem::updateLCDDisplay() {
                                (remoteTemperature * 9.0 / 5.0) + 32.0 : -999.0;
     g_lcdDisplay->updateSensorReadings(displayLocalTempF, fuelGallons, displayRemoteTempF);
     
-    // Update additional sensor data (line 4) - Power and ADC sensors
-    g_lcdDisplay->updateAdditionalSensors(currentVoltage, currentCurrent, currentAdcVoltage);
+    // Update additional sensor data (line 4) - Power sensors and Serial1→MQTT traffic (5-min window)
+    uint32_t serialMsgCount = 0;
+    uint32_t mqttMsgCount = 0;
+    
+    if (g_serialBridge) {
+        serialMsgCount = g_serialBridge->getWindowedReceived();
+        mqttMsgCount = g_serialBridge->getWindowedForwarded();
+    }
+    
+    g_lcdDisplay->updateAdditionalSensors(currentVoltage, currentCurrent, currentAdcVoltage, serialMsgCount, mqttMsgCount);
     
     // Disable multiplexer channel after LCD update
     i2cMux.disableAllChannels();

@@ -1,0 +1,21 @@
+{
+  "mqtt": {
+    "host": "192.168.1.155",
+    "port": 1883,
+    "keepalive": 60,
+    "username": "rayven",
+    "password": "Th1s1sas3cr3t"
+  },
+  "influxdb": {
+    "url": "http://192.168.1.155:8086",
+    "token": "NOV4A2NNaCOjqRL7cVMjAixIlUQ3kBhas-GXoEmJ9dlE6wjoCVWJMimuRGUDBRrboU7-2rkPWTmdOUrbG7j8jw==",
+    "org": "oe",
+    "bucket": "mqtt"
+  },
+  "web": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  },
+  "log_level": "DEBUG"
+}
