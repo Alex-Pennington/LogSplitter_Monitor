@@ -219,7 +219,8 @@ class DashboardDataProvider:
                 'efficiency_metrics': self._get_efficiency_metrics(cursor),
                 'safety_analysis': self._get_safety_analysis(cursor),
                 'operational_patterns': self._get_operational_patterns(cursor),
-                'system_health': self._get_system_health_metrics(cursor)
+                'system_health': self._get_system_health_metrics(cursor),
+                'fuel_status': self._get_fuel_status(cursor)
             }
             
             conn.close()
@@ -319,10 +320,12 @@ class DashboardDataProvider:
         """)
         
         pressures = []
+        high_pressures = []  # Pressures above idle threshold
         max_pressure = 0
-        avg_pressure = 0
+        avg_high_pressure = 0
         pressure_spikes = 0
         pressure_faults = 0
+        IDLE_THRESHOLD = 50  # PSI - below this is considered idle/no pressure
         
         for row in cursor.fetchall():
             try:
@@ -349,6 +352,10 @@ class DashboardDataProvider:
                     if pressure_psi > max_pressure:
                         max_pressure = pressure_psi
                     
+                    # Track high pressures (active operation)
+                    if pressure_psi > IDLE_THRESHOLD:
+                        high_pressures.append(pressure_psi)
+                    
                     # Count pressure spikes (over 2500 PSI)
                     if pressure_psi > 2500:
                         pressure_spikes += 1
@@ -356,18 +363,19 @@ class DashboardDataProvider:
             except (json.JSONDecodeError, KeyError):
                 continue
         
-        if pressures:
-            avg_pressure = sum(p['pressure'] for p in pressures) / len(pressures)
+        # Calculate average of HIGH pressures only (excludes idle/zero readings)
+        if high_pressures:
+            avg_high_pressure = sum(high_pressures) / len(high_pressures)
         
         # Calculate pressure efficiency (operating pressure vs max rated)
         rated_max = 5000  # PSI - system max
         pressure_efficiency = 0
         if max_pressure > 0:
-            pressure_efficiency = (avg_pressure / rated_max) * 100
+            pressure_efficiency = (avg_high_pressure / rated_max) * 100
         
         return {
             'max_pressure_psi': round(max_pressure, 1),
-            'avg_pressure_psi': round(avg_pressure, 1),
+            'avg_pressure_psi': round(avg_high_pressure, 1),
             'pressure_spikes': pressure_spikes,
             'pressure_faults': pressure_faults,
             'pressure_efficiency': round(pressure_efficiency, 1),
@@ -615,6 +623,47 @@ class DashboardDataProvider:
             'overall_health_score': round(overall_health, 1)
         }
     
+    def _get_fuel_status(self, cursor):
+        """Get latest fuel level and age from weight sensor"""
+        cursor.execute("""
+            SELECT 
+                value,
+                received_timestamp
+            FROM monitor_data 
+            WHERE topic = 'monitor/weight'
+            ORDER BY received_timestamp DESC
+            LIMIT 1
+        """)
+        
+        row = cursor.fetchone()
+        if row:
+            weight_grams = row[0]
+            timestamp_str = row[1]
+            
+            # Convert weight to gallons (assuming fuel density ~700 g/L, 1 gal = 3.78541 L)
+            gallons = weight_grams / (700 * 3.78541) if weight_grams else 0
+            
+            # Calculate age in seconds
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+                age_seconds = (datetime.now() - timestamp).total_seconds()
+            except:
+                age_seconds = 0
+            
+            return {
+                'fuel_gallons': round(gallons, 2),
+                'weight_grams': round(weight_grams, 1),
+                'last_reading_age_seconds': round(age_seconds, 0),
+                'last_reading_timestamp': timestamp_str
+            }
+        
+        return {
+            'fuel_gallons': 0,
+            'weight_grams': 0,
+            'last_reading_age_seconds': 0,
+            'last_reading_timestamp': None
+        }
+    
     def get_basket_metrics(self, hours: int = 24):
         """Get basket exchange metrics by analyzing SPLITTER_OPERATOR button presses"""
         try:
@@ -705,7 +754,8 @@ class DashboardDataProvider:
                     elif 'weight' in topic and value > 0:
                         weights.append(value)
                 
-                # Get sequence events in exchange window
+                # Get sequence events in exchange window (60s before button press to 10s after)
+                # Sequences typically complete BEFORE operator presses button
                 cursor.execute("""
                     SELECT 
                         payload_json
@@ -714,7 +764,7 @@ class DashboardDataProvider:
                       AND message_type_name = 'SEQUENCE_EVENT'
                       AND payload_json NOT LIKE '%_legacy_empty%'
                       AND received_timestamp BETWEEN 
-                        datetime(?, '-10 seconds') AND datetime(?, '+20 seconds')
+                        datetime(?, '-60 seconds') AND datetime(?, '+10 seconds')
                     ORDER BY received_timestamp ASC
                 """, (press_time, press_time))
                 
@@ -958,11 +1008,6 @@ def dashboard():
     """Main dashboard page"""
     return render_template('dashboard.html')
 
-@app.route('/basket')
-def basket_metrics():
-    """Basket metrics page with date range selection"""
-    return render_template('basket_metrics.html')
-
 @app.route('/api/recent')
 def api_recent():
     """API endpoint for recent messages"""
@@ -994,23 +1039,6 @@ def api_analytics():
     """API endpoint for comprehensive analytics data"""
     analytics = data_provider.get_analytics_data()
     return jsonify(analytics)
-
-@app.route('/api/basket')
-def api_basket():
-    """API endpoint for basket exchange metrics"""
-    hours = request.args.get('hours', 24, type=int)
-    basket_metrics = data_provider.get_basket_metrics(hours)
-    sequence_events = data_provider.get_sequence_events(hours)
-    manual_moves = data_provider.get_manual_moves(hours)
-    
-    # Combine all data
-    response = {
-        **basket_metrics,
-        'sequence_events': sequence_events,
-        'manual_moves': manual_moves
-    }
-    
-    return jsonify(response)
 
 @socketio.on('connect')
 def handle_connect():

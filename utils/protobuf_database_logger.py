@@ -359,6 +359,15 @@ class ProtobufDatabaseLogger:
         decoded = self.decoder.decode_message(message.payload)
         
         if decoded:
+            # Validate message type is one of the 8 valid protobuf types (0x10-0x17)
+            VALID_MESSAGE_TYPES = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17}
+            
+            if decoded['type'] not in VALID_MESSAGE_TYPES:
+                # Invalid/corrupted message type - log and skip
+                print(f"⚠️  SKIPPED: Invalid message type 0x{decoded['type']:02X} (valid: 0x10-0x17)")
+                self.errors += 1
+                return
+            
             # Store in database
             self.store_protobuf_message(decoded, len(message.payload))
             

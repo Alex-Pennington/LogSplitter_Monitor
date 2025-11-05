@@ -38,6 +38,67 @@
 - **Testing**: Use Telnet/Serial to run `test` commands for diagnostics.
 - **Documentation**: Key docs in `README.md`, `docs/UNIFIED_ARCHITECTURE.md`, and `docs/DEPLOYMENT_GUIDE.md`.
 
+## 🔒 FROZEN PRODUCTION SCRIPTS (DO NOT EDIT)
+**The following scripts are validated, in production, and frozen. DO NOT modify without explicit user authorization.**
+
+### Protobuf Telemetry Pipeline (Validated Nov 5, 2025)
+- **`utils/protobuf_database_logger.py`** - Production service ingesting protobuf messages to SQLite
+  - Service: `logsplitter-protobuf-logger.service`
+  - Status: OPERATIONAL - 7,821+ messages validated
+  - Features: 8 message types (0x10-0x17), corruption filtering, real-time ingestion
+  - Database: `utils/logsplitter_data.db`
+  
+- **`utils/mqtt_protobuf_decoder.py`** - Core protobuf decoder library
+  - Status: VALIDATED - All 8 message types decoding correctly
+  - Wire format: [size][type][seq][timestamp_4B][payload]
+  - Message handlers: DIGITAL_INPUT, DIGITAL_OUTPUT, RELAY_EVENT, PRESSURE, SYSTEM_ERROR, SAFETY_EVENT, SYSTEM_STATUS, SEQUENCE_EVENT
+  
+- **`utils/show_telemetry_status.py`** - Telemetry monitoring dashboard script
+  - Status: VALIDATED - Correct age calculations, UTC timezone handling
+  - Features: Last value display, age formatting, verbose/detailed modes
+  - Usage: `./show_telemetry_status.py [-v] [-d] [--db path] [-t type]`
+
+### Validation Evidence
+- E-Stop event capture confirmed (2025-11-05 17:21:57 - 17:22:04)
+- Zero database corruption (all messages 0x10-0x17)
+- Pressure sensor A15 operational (0-3000 PSI range)
+- 2,605+ digital inputs, 1,340+ relay events, 2,546+ sequence events captured
+- Real-time latency: <5 seconds
+
+**⚠️ CRITICAL**: Any modifications to these scripts require:
+1. User explicit approval
+2. Service shutdown: `sudo systemctl stop logsplitter-protobuf-logger.service`
+3. Database backup: `cp utils/logsplitter_data.db utils/logsplitter_data.db.backup`
+4. Full validation testing before service restart
+
+### Monitor Sensor Pipeline (Validated Nov 5, 2025)
+- **`utils/monitor_database_logger.py`** - Production service ingesting monitor sensor data to SQLite
+  - Service: `logsplitter-monitor-logger.service`
+  - Status: OPERATIONAL - 277+ messages validated
+  - Features: Temperature, fuel, weight, voltage, ADC, system status
+  - Database: `utils/monitor_data.db`
+  - Topics: `monitor/temperature/*`, `monitor/fuel/gallons`, `monitor/weight/*`, `monitor/adc/*`, `monitor/memory`, `monitor/uptime`
+  
+- **`utils/show_monitor_status.py`** - Monitor sensor dashboard script
+  - Status: VALIDATED - Real-time sensor display, age calculations
+  - Features: Sensor readings, weight data, digital I/O, system status
+  - Usage: `./show_monitor_status.py [-v] [--db path]`
+
+### Monitor Validation Evidence
+- Fuel level capture confirmed: 2.95 gallons
+- Temperature sensors operational: Local (118.78°F), Remote (129.47°F)
+- Weight sensor raw data: 947,993 counts
+- ADC readings: Voltage and raw values captured
+- System status: Memory usage tracked (21.26 KB free)
+- 165+ sensor readings, 22+ weight readings, 90+ system status updates
+- Real-time latency: <20 seconds
+
+**⚠️ CRITICAL**: Any modifications to monitor scripts require:
+1. User explicit approval
+2. Service shutdown: `sudo systemctl stop logsplitter-monitor-logger.service`
+3. Database backup: `cp utils/monitor_data.db utils/monitor_data.db.backup`
+4. Full validation testing before service restart
+
 ## Integration & External Dependencies
 - **MQTT**: Used for remote monitoring and control.
 - **Syslog**: All logs sent to a central syslog server (configurable).

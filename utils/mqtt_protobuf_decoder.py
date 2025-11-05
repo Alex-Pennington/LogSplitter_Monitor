@@ -74,18 +74,23 @@ class LogSplitterProtobufDecoder:
         try:
             self.messages_received += 1
             
-            if len(binary_data) < 7:  # Minimum message size
+            if len(binary_data) < 7:  # Minimum message size (1 size + 6 header)
                 self.decode_errors += 1
                 print(f"ERROR: Message too short: {len(binary_data)} bytes")
                 return None
             
-            # Parse header - first byte is length, second is message type
+            # Parse header:
+            # Wire format: [size][msg_type][seq][timestamp_4bytes][payload...]
+            # Size byte INCLUDES itself in the count (total MQTT message length)
+            # So: size_byte should equal len(binary_data)
             size_byte = binary_data[0]
-            if size_byte != len(binary_data):
-                # Allow slight mismatch for debugging, but warn
-                print(f"WARNING: Size mismatch: expected {size_byte}, got {len(binary_data)}")
             
-            msg_type = binary_data[1]  # Second byte is the actual message type
+            if size_byte != len(binary_data):
+                # Size mismatch - possible corruption
+                print(f"WARNING: Size mismatch: size_byte={size_byte}, actual length={len(binary_data)}")
+                # Try to decode anyway for debugging
+            
+            msg_type = binary_data[1]  # Second byte is the message type
             sequence = binary_data[2]
             timestamp = struct.unpack('<L', binary_data[3:7])[0]  # Little-endian uint32
             payload = binary_data[7:] if len(binary_data) > 7 else b''
@@ -220,6 +225,7 @@ class LogSplitterProtobufDecoder:
             'state_name': 'HIGH' if (flags & 0x01) else 'LOW',
             'output_type': (flags >> 1) & 0x07,
             'output_type_name': self._get_output_type_name((flags >> 1) & 0x07),
+            'pattern': (flags >> 4) & 0x0F,
             'mill_lamp_pattern': (flags >> 4) & 0x0F,
             'mill_lamp_pattern_name': self._get_mill_lamp_pattern_name((flags >> 4) & 0x0F)
         }
@@ -277,7 +283,8 @@ class LogSplitterProtobufDecoder:
             'fault_status': 'FAULT' if (flags & 0x01) else 'OK',
             'pressure_type': (flags >> 1) & 0x7F,
             'pressure_type_name': self._get_pressure_type_name((flags >> 1) & 0x7F),
-            'raw_adc_value': raw_adc_value,
+            'raw_value': raw_adc_value,  # For test compatibility
+            'raw_adc_value': raw_adc_value,  # Keep existing key
             'pressure_psi': round(pressure_psi, 2)
         }
     
@@ -289,7 +296,8 @@ class LogSplitterProtobufDecoder:
         
         description = ""
         if desc_length > 0 and len(payload) > 3:
-            desc_bytes = payload[3:3+min(desc_length, len(payload)-3)]
+            # Read exactly desc_length bytes for the description
+            desc_bytes = payload[3:3+desc_length]
             description = desc_bytes.decode('ascii', errors='ignore').rstrip('\x00')
         
         return {
@@ -304,17 +312,23 @@ class LogSplitterProtobufDecoder:
         }
     
     def _decode_safety_event(self, payload: bytes) -> Optional[Dict[str, Any]]:
+        print(f"DEBUG: Safety event payload: {payload.hex()} ({len(payload)} bytes)")
+        
         if len(payload) < 3:
+            print(f"DEBUG: Safety payload too short: {len(payload)} < 3")
             return None
         
-        event_type, flags, reserved = struct.unpack('<BBB', payload)
+        event_type, flags, reserved = struct.unpack('<BBB', payload[:3])
         
-        return {
+        result = {
             'event_type': event_type,
             'event_type_name': self._get_safety_event_name(event_type),
             'is_active': bool(flags & 0x01),
             'status': 'ACTIVE' if (flags & 0x01) else 'INACTIVE'
         }
+        
+        print(f"DEBUG: Decoded safety event: {result}")
+        return result
     
     def _decode_system_status(self, payload: bytes) -> Optional[Dict[str, Any]]:
         if len(payload) < 10:
@@ -374,7 +388,7 @@ class LogSplitterProtobufDecoder:
     def _get_type_name(self, msg_type: int) -> str:
         """Get message type name based on protobuf definitions"""
         types = {
-            # Standard protobuf message types (0x10-0x17)
+            # Valid protobuf message types (0x10-0x17) - from controller_telemetry.proto
             0x10: 'DIGITAL_INPUT',
             0x11: 'DIGITAL_OUTPUT', 
             0x12: 'RELAY_EVENT',
@@ -383,70 +397,55 @@ class LogSplitterProtobufDecoder:
             0x15: 'SAFETY_EVENT',
             0x16: 'SYSTEM_STATUS',
             0x17: 'SEQUENCE_EVENT',
-            
-            # Common invalid/corrupted message indicators
-            0x00: 'NULL_MESSAGE',
-            0xFF: 'INVALID_MESSAGE',
-            0xFE: 'CORRUPTED_DATA',
-            0xAA: 'TEST_PATTERN',
-            0xAC: 'ALIGNMENT_ERROR',
-            
-            # Potential extended message types (if implemented)
-            0x09: 'LEGACY_HEARTBEAT',
-            0x0A: 'SENSOR_CALIBRATION', 
-            0x0E: 'NETWORK_STATUS',
-            0x0F: 'DEBUG_MESSAGE',
-            
-            # Hardware diagnostic codes
-            0x66: 'HARDWARE_DIAG_1',
-            0x68: 'HARDWARE_DIAG_2', 
-            0x78: 'MEMORY_DIAGNOSTIC',
-            0x9B: 'TIMING_DIAGNOSTIC',
-            0x9E: 'PERFORMANCE_METRIC'
         }
-        return types.get(msg_type, f'UNKNOWN_0x{msg_type:02X}')
+        return types.get(msg_type, f'INVALID_0x{msg_type:02X}')
     
     def _get_input_type_name(self, input_type: int) -> str:
         types = {
-            0x00: 'UNKNOWN',
-            0x01: 'MANUAL_EXTEND',
-            0x02: 'MANUAL_RETRACT', 
-            0x03: 'SAFETY_CLEAR',
-            0x04: 'SEQUENCE_START',
-            0x05: 'LIMIT_EXTEND',
-            0x06: 'LIMIT_RETRACT',
-            0x07: 'SPLITTER_OPERATOR',
-            0x08: 'EMERGENCY_STOP'
+            0x00: 'INPUT_UNKNOWN',
+            0x01: 'INPUT_MANUAL_EXTEND',
+            0x02: 'INPUT_MANUAL_RETRACT', 
+            0x03: 'INPUT_SAFETY_CLEAR',
+            0x04: 'INPUT_SEQUENCE_START',
+            0x05: 'INPUT_LIMIT_EXTEND',
+            0x06: 'INPUT_LIMIT_RETRACT',
+            0x07: 'INPUT_SPLITTER_OPERATOR',
+            0x08: 'INPUT_EMERGENCY_STOP'
         }
-        return types.get(input_type, f'UNKNOWN_{input_type}')
+        return types.get(input_type, f'INPUT_UNKNOWN_{input_type}')
     
     def _get_output_type_name(self, output_type: int) -> str:
         types = {
-            0x00: 'UNKNOWN',
-            0x01: 'MILL_LAMP',
-            0x02: 'STATUS_LED'
+            0x00: 'OUTPUT_UNKNOWN',
+            0x01: 'OUTPUT_MILL_LAMP',
+            0x02: 'OUTPUT_STATUS_LED',
+            0x03: 'OUTPUT_SAFETY_STATUS'
         }
-        return types.get(output_type, f'UNKNOWN_{output_type}')
+        return types.get(output_type, f'OUTPUT_UNKNOWN_{output_type}')
     
     def _get_mill_lamp_pattern_name(self, pattern: int) -> str:
         patterns = {
-            0x00: 'OFF',
-            0x01: 'SOLID',
-            0x02: 'SLOW_BLINK',
-            0x03: 'FAST_BLINK'
+            0x00: 'LAMP_OFF',
+            0x01: 'LAMP_SOLID',
+            0x02: 'LAMP_SLOW_BLINK',
+            0x03: 'LAMP_FAST_BLINK'
         }
-        return patterns.get(pattern, f'UNKNOWN_{pattern}')
+        return patterns.get(pattern, f'LAMP_UNKNOWN_{pattern}')
     
     def _get_relay_type_name(self, relay_type: int) -> str:
         types = {
-            0x00: 'UNKNOWN',
-            0x01: 'HYDRAULIC_EXTEND',
-            0x02: 'HYDRAULIC_RETRACT',
-            0x07: 'OPERATOR_BUZZER',
-            0x08: 'ENGINE_STOP',
-            0x09: 'POWER_CONTROL'
+            0x00: 'RELAY_UNKNOWN',
+            0x01: 'RELAY_HYDRAULIC_EXTEND',
+            0x02: 'RELAY_HYDRAULIC_RETRACT',
+            0x03: 'RELAY_RESERVED_3',
+            0x04: 'RELAY_RESERVED_4',
+            0x05: 'RELAY_RESERVED_5',
+            0x06: 'RELAY_RESERVED_6',
+            0x07: 'RELAY_OPERATOR_BUZZER',
+            0x08: 'RELAY_ENGINE_STOP',
+            0x09: 'RELAY_POWER_CONTROL'
         }
-        return types.get(relay_type, f'RESERVED_{relay_type}')
+        return types.get(relay_type, f'RELAY_RESERVED_{relay_type}')
     
     def _get_sensor_type_name(self, sensor_type: int) -> str:
         types = {
@@ -516,15 +515,15 @@ class LogSplitterProtobufDecoder:
     
     def _get_sequence_state_name(self, state: int) -> str:
         states = {
-            0x00: 'IDLE',
-            0x01: 'EXTENDING',
-            0x02: 'EXTENDED',
-            0x03: 'RETRACTING',
-            0x04: 'RETRACTED',
-            0x05: 'PAUSED',
-            0x06: 'ERROR_STATE'
+            0x00: 'SEQ_IDLE',
+            0x01: 'SEQ_EXTENDING',
+            0x02: 'SEQ_EXTENDED',
+            0x03: 'SEQ_RETRACTING',
+            0x04: 'SEQ_RETRACTED',
+            0x05: 'SEQ_PAUSED',
+            0x06: 'SEQ_ERROR_STATE'
         }
-        return states.get(state, f'UNKNOWN_{state}')
+        return states.get(state, f'SEQ_UNKNOWN_{state}')
     
     def _get_sequence_event_name(self, event_type: int) -> str:
         events = {

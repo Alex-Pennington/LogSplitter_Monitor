@@ -489,7 +489,7 @@
                             <span class="metric-value" id="maxPressure">0 PSI</span>
                         </div>
                         <div class="metric-row">
-                            <span class="metric-label">Avg Pressure</span>
+                            <span class="metric-label">Avg High Pressure</span>
                             <span class="metric-value" id="avgPressure">0 PSI</span>
                         </div>
                         <div class="metric-row">
@@ -604,6 +604,25 @@
                                 </div>
                                 <span class="metric-value" id="overallHealthScore">0%</span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Fuel Status -->
+                <div class="analytics-card">
+                    <h3 class="card-title">⛽ Fuel Status</h3>
+                    <div id="fuelMetrics">
+                        <div class="metric-row">
+                            <span class="metric-label">Fuel Level</span>
+                            <span class="metric-value" id="fuelGallons">0 gal</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Reading Age</span>
+                            <span class="metric-value" id="fuelAge">0s</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Weight</span>
+                            <span class="metric-value" id="fuelWeight">0 g</span>
                         </div>
                     </div>
                 </div>
@@ -892,10 +911,10 @@
                 const analytics = await response.json();
                 updateAnalytics(analytics);
                 
-                // Load basket metrics
-                const basketResponse = await fetch('/api/basket');
-                const basketMetrics = await basketResponse.json();
-                updateBasketMetrics(basketMetrics);
+                // Basket metrics removed - focus on data ingestion accuracy
+                // const basketResponse = await fetch('/api/basket');
+                // const basketMetrics = await basketResponse.json();
+                // updateBasketMetrics(basketMetrics);
             } catch (error) {
                 console.error('Error loading analytics data:', error);
             }
@@ -956,6 +975,26 @@
                 updateHealthBar('performanceBar', 'performance', analytics.system_health.performance_score);
                 updateHealthBar('errorBar', 'errorRate', analytics.system_health.error_score);
                 updateHealthBar('overallHealthBar', 'overallHealthScore', analytics.system_health.overall_health_score);
+            }
+            
+            // Update fuel status
+            if (analytics.fuel_status) {
+                document.getElementById('fuelGallons').textContent = analytics.fuel_status.fuel_gallons + ' gal';
+                document.getElementById('fuelWeight').textContent = analytics.fuel_status.weight_grams.toLocaleString() + ' g';
+                
+                // Format age in human-readable format
+                const ageSeconds = analytics.fuel_status.last_reading_age_seconds;
+                let ageText = '';
+                if (ageSeconds < 60) {
+                    ageText = Math.round(ageSeconds) + 's';
+                } else if (ageSeconds < 3600) {
+                    ageText = Math.round(ageSeconds / 60) + 'm';
+                } else if (ageSeconds < 86400) {
+                    ageText = Math.round(ageSeconds / 3600) + 'h';
+                } else {
+                    ageText = Math.round(ageSeconds / 86400) + 'd';
+                }
+                document.getElementById('fuelAge').textContent = ageText;
             }
             
             // Update operational patterns
