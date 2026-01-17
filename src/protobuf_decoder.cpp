@@ -50,80 +50,325 @@ bool ProtobufDecoder::decodeProtobufMessage(uint8_t* data, size_t length) {
     // Copy data to working buffer
     memcpy(decodingBuffer, data, length);
     
-    // TODO: Replace with actual nanopb decoding when protobuf headers are available
-    // For now, implement placeholder decoding logic
-    
-    bool decodeSuccess = decodeProtobufPlaceholder(decodingBuffer, length);
+    // Decode and publish to individual topics
+    bool decodeSuccess = decodeAndPublish(decodingBuffer, length);
     
     if (decodeSuccess) {
         messagesDecoded++;
         lastTelemetryTime = millis();
         updateTelemetryStats(true, length);
-        
-        Logger::log(LOG_DEBUG, "ProtobufDecoder: Successfully decoded %d byte message", length);
         return true;
     } else {
         decodingErrors++;
         updateTelemetryStats(false, length);
-        logDecodingError("Protobuf decode failed", String("Length: ") + String(length));
         return false;
     }
 }
 
-bool ProtobufDecoder::decodeProtobufPlaceholder(uint8_t* data, size_t length) {
-    // PLACEHOLDER: This will be replaced with actual nanopb decoding
-    // For now, simulate successful decoding and extract mock data
+bool ProtobufDecoder::decodeAndPublish(uint8_t* data, size_t length) {
+    // Per TELEMETRY_API.md format:
+    // Byte 0: SIZE (header + payload length, NOT including size byte)
+    // Byte 1: Message Type (0x10-0x17)
+    // Byte 2: Sequence ID
+    // Bytes 3-6: Timestamp (uint32_t little-endian)
+    // Bytes 7+: Payload
     
-    // Simulate extracting telemetry data from protobuf
-    // In real implementation, this would use pb_decode() with generated structs
-    
-    // Mock pressure data extraction
-    if (canPublishPressure()) {
-        float mockA1Pressure = 245.5f;  // Simulate decoded pressure
-        float mockA5Pressure = 12.3f;
-        
-        publishToMqtt("controller/pressure/a1", mockA1Pressure);
-        publishToMqtt("controller/pressure/a5", mockA5Pressure);
-        
-        lastPressurePublish = millis();
+    if (length < 7) {
+        logDecodingError("Message too short", String(length) + " bytes");
+        return false;
     }
     
-    // Mock relay status extraction
-    if (canPublishRelay()) {
-        bool mockR1State = false;  // Simulate decoded relay states
-        bool mockR2State = true;
-        
-        publishToMqtt("controller/relay/r1", mockR1State ? "ON" : "OFF");
-        publishToMqtt("controller/relay/r2", mockR2State ? "ON" : "OFF");
-        
-        lastRelayPublish = millis();
+    uint8_t sizeField = data[0];
+    uint8_t msgType = data[1];
+    uint8_t sequence = data[2];
+    uint32_t timestamp = data[3] | (data[4] << 8) | (data[5] << 16) | (data[6] << 24);
+    
+    // Validate size field
+    if ((sizeField + 1) != length) {
+        logDecodingError("Size mismatch", String("SIZE=") + String(sizeField) + " len=" + String(length));
+        return false;
     }
     
-    // Mock sequence status extraction
-    if (canPublishSequence()) {
-        String mockSequenceState = "IDLE";  // Simulate decoded sequence state
-        uint32_t mockElapsedMs = 0;
-        
-        publishToMqtt("controller/sequence/state", mockSequenceState.c_str());
-        publishToMqtt("controller/sequence/elapsed", mockElapsedMs);
-        
-        lastSequencePublish = millis();
+    // Extract payload (everything after 7-byte header)
+    uint8_t* payload = data + 7;
+    size_t payloadLen = length - 7;
+    
+    Logger::log(LOG_DEBUG, "ProtobufDecoder: Type=0x%02X Seq=%d TS=%lu PayloadLen=%d", 
+                msgType, sequence, timestamp, payloadLen);
+    
+    // Dispatch to appropriate decoder based on message type
+    switch (msgType) {
+        case 0x10:
+            return decodeDigitalInput(payload, payloadLen, sequence, timestamp);
+        case 0x11:
+            return decodeDigitalOutput(payload, payloadLen, sequence, timestamp);
+        case 0x12:
+            return decodeRelayEvent(payload, payloadLen, sequence, timestamp);
+        case 0x13:
+            return decodePressure(payload, payloadLen, sequence, timestamp);
+        case 0x14:
+            return decodeSystemError(payload, payloadLen, sequence, timestamp);
+        case 0x15:
+            return decodeSafetyEvent(payload, payloadLen, sequence, timestamp);
+        case 0x16:
+            return decodeSystemStatus(payload, payloadLen, sequence, timestamp);
+        case 0x17:
+            return decodeSequenceEvent(payload, payloadLen, sequence, timestamp);
+        default:
+            logDecodingError("Unknown message type", String("0x") + String(msgType, HEX));
+            return false;
+    }
+}
+
+// ===== INDIVIDUAL MESSAGE DECODERS =====
+
+bool ProtobufDecoder::decodeDigitalInput(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: pin(1) + flags(1) + debounce_time(2) = 4 bytes
+    if (length < 4) return false;
+    
+    uint8_t pin = payload[0];
+    uint8_t flags = payload[1];
+    uint16_t debounceTime = payload[2] | (payload[3] << 8);
+    
+    bool state = flags & 0x01;
+    bool isDebounced = flags & 0x02;
+    uint8_t inputType = (flags >> 2) & 0x3F;
+    
+    // Publish to individual topics
+    char topic[48];
+    char value[32];
+    
+    // State topic
+    snprintf(topic, sizeof(topic), "controller/input/%d/state", pin);
+    publishToMqtt(topic, state ? "ACTIVE" : "INACTIVE");
+    
+    // Type topic  
+    snprintf(topic, sizeof(topic), "controller/input/%d/type", pin);
+    static const char* inputTypes[] = {"UNKNOWN", "MANUAL_EXTEND", "MANUAL_RETRACT", "SAFETY_CLEAR", 
+                                        "SEQUENCE_START", "LIMIT_EXTEND", "LIMIT_RETRACT", 
+                                        "SPLITTER_OPERATOR", "EMERGENCY_STOP"};
+    const char* typeName = (inputType < 9) ? inputTypes[inputType] : "UNKNOWN";
+    publishToMqtt(topic, typeName);
+    
+    Logger::log(LOG_DEBUG, "DI%d: %s (%s)", pin, state ? "ACTIVE" : "INACTIVE", typeName);
+    return true;
+}
+
+bool ProtobufDecoder::decodeDigitalOutput(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: pin(1) + flags(1) + reserved(1) = 3 bytes
+    if (length < 3) return false;
+    
+    uint8_t pin = payload[0];
+    uint8_t flags = payload[1];
+    
+    bool state = flags & 0x01;
+    uint8_t outputType = (flags >> 1) & 0x07;
+    uint8_t lampPattern = (flags >> 4) & 0x0F;
+    
+    char topic[48];
+    
+    snprintf(topic, sizeof(topic), "controller/output/%d/state", pin);
+    publishToMqtt(topic, state ? "HIGH" : "LOW");
+    
+    if (outputType == 1) { // MILL_LAMP
+        static const char* patterns[] = {"OFF", "SOLID", "SLOW_BLINK", "FAST_BLINK"};
+        const char* patternName = (lampPattern < 4) ? patterns[lampPattern] : "UNKNOWN";
+        publishToMqtt("controller/output/mill_lamp/pattern", patternName);
     }
     
-    // Mock system health extraction
-    if (canPublishSystem()) {
-        String mockSystemMode = "READY";
-        bool mockSafetyActive = false;
-        uint32_t mockUptime = millis();
-        
-        publishToMqtt("controller/system/mode", mockSystemMode.c_str());
-        publishToMqtt("controller/system/safety_active", mockSafetyActive);
-        publishToMqtt("controller/system/uptime", mockUptime);
-        
-        lastSystemPublish = millis();
+    Logger::log(LOG_DEBUG, "DO%d: %s", pin, state ? "HIGH" : "LOW");
+    return true;
+}
+
+bool ProtobufDecoder::decodeRelayEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: relay_number(1) + flags(1) + reserved(1) = 3 bytes
+    if (length < 3) return false;
+    
+    uint8_t relayNum = payload[0];
+    uint8_t flags = payload[1];
+    
+    bool state = flags & 0x01;
+    bool isManual = flags & 0x02;
+    bool success = flags & 0x04;
+    uint8_t relayType = (flags >> 3) & 0x1F;
+    
+    char topic[48];
+    
+    // State topic
+    snprintf(topic, sizeof(topic), "controller/relay/r%d/state", relayNum);
+    publishToMqtt(topic, state ? "ON" : "OFF");
+    
+    // Mode topic
+    snprintf(topic, sizeof(topic), "controller/relay/r%d/mode", relayNum);
+    publishToMqtt(topic, isManual ? "MANUAL" : "AUTO");
+    
+    // Type name for logging
+    static const char* relayTypes[] = {"UNKNOWN", "HYDRAULIC_EXTEND", "HYDRAULIC_RETRACT", 
+                                        "RESERVED", "RESERVED", "RESERVED", "RESERVED",
+                                        "OPERATOR_BUZZER", "ENGINE_STOP", "POWER_CONTROL"};
+    const char* typeName = (relayType < 10) ? relayTypes[relayType] : "UNKNOWN";
+    
+    Logger::log(LOG_DEBUG, "R%d: %s (%s, %s)", relayNum, state ? "ON" : "OFF", 
+                isManual ? "MANUAL" : "AUTO", typeName);
+    
+    lastRelayPublish = millis();
+    return true;
+}
+
+bool ProtobufDecoder::decodePressure(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: sensor_pin(1) + flags(1) + raw_value(2) + pressure_psi(4) = 8 bytes
+    if (length < 8) return false;
+    
+    uint8_t sensorPin = payload[0];
+    uint8_t flags = payload[1];
+    uint16_t rawValue = payload[2] | (payload[3] << 8);
+    float pressurePsi;
+    memcpy(&pressurePsi, payload + 4, sizeof(float));
+    
+    bool isFault = flags & 0x01;
+    uint8_t pressureType = (flags >> 1) & 0x7F;
+    
+    char topic[48];
+    char value[16];
+    
+    // Pressure value topic
+    snprintf(topic, sizeof(topic), "controller/pressure/a%d", sensorPin);
+    snprintf(value, sizeof(value), "%.2f", pressurePsi);
+    publishToMqtt(topic, value);
+    
+    // Raw ADC topic
+    snprintf(topic, sizeof(topic), "controller/pressure/a%d/raw", sensorPin);
+    publishToMqtt(topic, (uint32_t)rawValue);
+    
+    // Fault status
+    if (isFault) {
+        snprintf(topic, sizeof(topic), "controller/pressure/a%d/fault", sensorPin);
+        publishToMqtt(topic, "FAULT");
     }
     
-    return true;  // Simulate successful decoding
+    static const char* pressureTypes[] = {"UNKNOWN", "SYSTEM_PRESSURE", "TANK_PRESSURE", 
+                                           "LOAD_PRESSURE", "AUXILIARY"};
+    const char* typeName = (pressureType < 5) ? pressureTypes[pressureType] : "UNKNOWN";
+    
+    Logger::log(LOG_DEBUG, "Pressure A%d: %.2f PSI (raw=%d, %s)", 
+                sensorPin, pressurePsi, rawValue, typeName);
+    
+    lastPressurePublish = millis();
+    return true;
+}
+
+bool ProtobufDecoder::decodeSystemError(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: error_code(1) + flags(1) + desc_length(1) + description(0-24) = 3-27 bytes
+    if (length < 3) return false;
+    
+    uint8_t errorCode = payload[0];
+    uint8_t flags = payload[1];
+    uint8_t descLength = payload[2];
+    
+    bool acknowledged = flags & 0x01;
+    bool active = flags & 0x02;
+    uint8_t severity = (flags >> 2) & 0x03;
+    
+    char description[25] = {0};
+    if (descLength > 0 && length > 3) {
+        size_t copyLen = (descLength < 24) ? descLength : 24;
+        if (copyLen > (length - 3)) copyLen = length - 3;
+        memcpy(description, payload + 3, copyLen);
+    }
+    
+    static const char* severities[] = {"INFO", "WARNING", "ERROR", "CRITICAL"};
+    
+    // Publish error info
+    publishToMqtt("controller/error/code", (uint32_t)errorCode);
+    publishToMqtt("controller/error/severity", severities[severity]);
+    publishToMqtt("controller/error/active", active);
+    if (descLength > 0) {
+        publishToMqtt("controller/error/description", description);
+    }
+    
+    Logger::log(LOG_CRITICAL, "Error 0x%02X: %s [%s] %s", 
+                errorCode, severities[severity], active ? "ACTIVE" : "cleared", description);
+    
+    return true;
+}
+
+bool ProtobufDecoder::decodeSafetyEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: event_type(1) + flags(1) + reserved(1) = 3 bytes
+    if (length < 3) return false;
+    
+    uint8_t eventType = payload[0];
+    uint8_t flags = payload[1];
+    
+    bool isActive = flags & 0x01;
+    
+    static const char* eventTypes[] = {"SAFETY_ACTIVATED", "SAFETY_CLEARED", "EMERGENCY_STOP_ACTIVATED",
+                                        "EMERGENCY_STOP_CLEARED", "LIMIT_SWITCH_TRIGGERED", "PRESSURE_SAFETY"};
+    const char* eventName = (eventType < 6) ? eventTypes[eventType] : "UNKNOWN";
+    
+    publishToMqtt("controller/safety/event", eventName);
+    publishToMqtt("controller/safety/active", isActive);
+    
+    Logger::log(LOG_CRITICAL, "Safety: %s (%s)", eventName, isActive ? "ACTIVE" : "INACTIVE");
+    
+    return true;
+}
+
+bool ProtobufDecoder::decodeSystemStatus(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: uptime(4) + loop_freq(2) + free_mem(2) + active_errors(1) + flags(1) + reserved(2) = 12 bytes
+    if (length < 12) return false;
+    
+    uint32_t uptimeMs = payload[0] | (payload[1] << 8) | (payload[2] << 16) | (payload[3] << 24);
+    uint16_t loopFreq = payload[4] | (payload[5] << 8);
+    uint16_t freeMem = payload[6] | (payload[7] << 8);
+    uint8_t activeErrors = payload[8];
+    uint8_t flags = payload[9];
+    
+    bool safetyActive = flags & 0x01;
+    bool estopActive = flags & 0x02;
+    uint8_t seqState = (flags >> 2) & 0x0F;
+    uint8_t lampPattern = (flags >> 6) & 0x03;
+    
+    // Publish system status
+    publishToMqtt("controller/system/uptime", uptimeMs);
+    publishToMqtt("controller/system/loop_hz", (uint32_t)loopFreq);
+    publishToMqtt("controller/system/free_memory", (uint32_t)freeMem);
+    publishToMqtt("controller/system/error_count", (uint32_t)activeErrors);
+    publishToMqtt("controller/system/safety_active", safetyActive);
+    publishToMqtt("controller/system/estop_active", estopActive);
+    
+    static const char* seqStates[] = {"IDLE", "EXTENDING", "EXTENDED", "RETRACTING", 
+                                       "RETRACTED", "PAUSED", "ERROR_STATE"};
+    const char* stateName = (seqState < 7) ? seqStates[seqState] : "UNKNOWN";
+    publishToMqtt("controller/system/sequence_state", stateName);
+    
+    Logger::log(LOG_DEBUG, "Status: uptime=%lus, mem=%d, seq=%s", 
+                uptimeMs/1000, freeMem, stateName);
+    
+    lastSystemPublish = millis();
+    return true;
+}
+
+bool ProtobufDecoder::decodeSequenceEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp) {
+    // Payload: event_type(1) + step_number(1) + elapsed_time(2) = 4 bytes
+    if (length < 4) return false;
+    
+    uint8_t eventType = payload[0];
+    uint8_t stepNumber = payload[1];
+    uint16_t elapsedMs = payload[2] | (payload[3] << 8);
+    
+    static const char* eventTypes[] = {"SEQUENCE_STARTED", "SEQUENCE_STEP_COMPLETE", "SEQUENCE_COMPLETE",
+                                        "SEQUENCE_PAUSED", "SEQUENCE_RESUMED", "SEQUENCE_ABORTED", 
+                                        "SEQUENCE_TIMEOUT"};
+    const char* eventName = (eventType < 7) ? eventTypes[eventType] : "UNKNOWN";
+    
+    publishToMqtt("controller/sequence/event", eventName);
+    publishToMqtt("controller/sequence/step", (uint32_t)stepNumber);
+    publishToMqtt("controller/sequence/elapsed_ms", (uint32_t)elapsedMs);
+    
+    Logger::log(LOG_DEBUG, "Sequence: %s step=%d elapsed=%dms", eventName, stepNumber, elapsedMs);
+    
+    lastSequencePublish = millis();
+    return true;
 }
 
 bool ProtobufDecoder::decodeTelemetryMessage(uint8_t* data, size_t length) {

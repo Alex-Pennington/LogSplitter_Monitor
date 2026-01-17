@@ -11,8 +11,10 @@
 #define BRIDGE_BUFFER_SIZE 512
 #define MAX_MESSAGE_LENGTH 256
 #define BRIDGE_TIMEOUT_MS 1000
-#define PROTOBUF_MIN_MESSAGE_SIZE 7     // Minimum protobuf message size (1 size + 6 header)
-#define PROTOBUF_MAX_MESSAGE_SIZE 33    // Maximum protobuf message size per API
+// Per TELEMETRY_API.md: SIZE byte = header(6) + payload length
+// Min: 6 bytes (header only), Max: 6 + 27 = 33 bytes (System Error with 24-char description)
+#define PROTOBUF_MIN_MESSAGE_SIZE 6     // Minimum: 6-byte header only
+#define PROTOBUF_MAX_MESSAGE_SIZE 33    // Maximum: header + largest payload
 
 // Rate limiting configuration
 #define BRIDGE_RATE_LIMIT_MS 100          // Minimum 100ms between MQTT publishes

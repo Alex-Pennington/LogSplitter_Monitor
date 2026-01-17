@@ -1,5 +1,7 @@
 ﻿#include <Arduino.h>
 #include <Wire.h>
+#include <WiFiS3.h>
+#include "arduino_secrets.h"
 #include "constants.h"
 #include "network_manager.h"
 #include "telnet_server.h"
@@ -73,12 +75,67 @@ void setup() {
     delay(200); // Give I2C bus time to stabilize
     Serial.println("I2C Wire1 initialized at 100kHz");
     
-    // Initialize command processor and network FIRST
+    // Scan I2C bus immediately for debugging
+    Serial.println("Scanning I2C bus (Wire1)...");
+    int deviceCount = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire1.beginTransmission(addr);
+        if (Wire1.endTransmission() == 0) {
+            Serial.print("  Found device at 0x");
+            if (addr < 16) Serial.print("0");
+            Serial.println(addr, HEX);
+            deviceCount++;
+        }
+    }
+    Serial.print("I2C scan complete: ");
+    Serial.print(deviceCount);
+    Serial.println(" device(s) found");
+    
+    // Try to initialize LCD IMMEDIATELY (before WiFi)
+    Serial.println("Attempting early LCD initialization...");
+    Wire1.beginTransmission(0x70);  // TCA9548A multiplexer address
+    Wire1.write(1 << 7);  // Select channel 7 for LCD
+    byte muxError = Wire1.endTransmission();
+    
+    if (muxError == 0) {
+        Serial.println("Multiplexer channel 7 selected for LCD");
+        delay(100);
+        
+        if (lcdDisplay.begin()) {
+            Serial.println("LCD display initialized successfully (early init)");
+            lcdDisplay.showStartupMessage();
+            lcdDisplay.showConnectingMessage();
+        } else {
+            Serial.println("LCD init failed - check I2C address 0x27");
+        }
+        
+        // Disable multiplexer channels after LCD init
+        Wire1.beginTransmission(0x70);
+        Wire1.write(0x00);
+        Wire1.endTransmission();
+    } else {
+        Serial.print("No multiplexer found at 0x70, error: ");
+        Serial.println(muxError);
+        
+        // Try LCD directly without multiplexer
+        Serial.println("Trying LCD directly at 0x27...");
+        if (lcdDisplay.begin()) {
+            Serial.println("LCD found directly (no multiplexer)");
+        } else {
+            Serial.println("LCD not found at 0x27");
+        }
+    }
+    
+    // Initialize command processor and network
     commandProcessor.begin(&networkManager, &monitorSystem);
     debugPrintf("Command processor initialized\n");
     
     networkManager.begin();
     debugPrintf("Network manager initialized\n");
+    
+    // Show WiFi credentials being used (masked password)
+    Serial.print("Connecting to WiFi SSID: ");
+    Serial.println(SECRET_SSID);
     
     // Initialize Logger system with NetworkManager
     Logger::begin(&networkManager);
@@ -98,6 +155,7 @@ void setup() {
     
     // Essential status message - always show 
     Serial.println("System ready - connecting to network...");
+    Serial.println("Type 'help' for available commands");
 }
 
 void loop() {
@@ -105,6 +163,50 @@ void loop() {
     
     // Update watchdog
     lastWatchdog = now;
+    
+    // WiFi connection status reporting
+    static unsigned long lastWifiStatusReport = 0;
+    static int lastWifiStatus = -1;
+    int currentWifiStatus = WiFi.status();
+    
+    // Report WiFi status changes or every 5 seconds while not connected
+    if (currentWifiStatus != lastWifiStatus || 
+        (!networkManager.isWiFiConnected() && now - lastWifiStatusReport >= 5000)) {
+        lastWifiStatus = currentWifiStatus;
+        lastWifiStatusReport = now;
+        
+        Serial.print("WiFi status: ");
+        switch (currentWifiStatus) {
+            case WL_IDLE_STATUS: Serial.println("IDLE"); break;
+            case WL_NO_SSID_AVAIL: Serial.println("NO SSID AVAILABLE - Check SSID name"); break;
+            case WL_SCAN_COMPLETED: Serial.println("SCAN COMPLETED"); break;
+            case WL_CONNECTED: Serial.print("CONNECTED - IP: "); Serial.println(WiFi.localIP()); break;
+            case WL_CONNECT_FAILED: Serial.println("CONNECT FAILED - Check password"); break;
+            case WL_CONNECTION_LOST: Serial.println("CONNECTION LOST"); break;
+            case WL_DISCONNECTED: Serial.println("DISCONNECTED - Retrying..."); break;
+            default: Serial.print("UNKNOWN ("); Serial.print(currentWifiStatus); Serial.println(")"); break;
+        }
+        
+        // Update LCD with WiFi status if available
+        if (lcdDisplay.isAvailable()) {
+            Wire1.beginTransmission(0x70);
+            Wire1.write(1 << 7);
+            Wire1.endTransmission();
+            delay(10);
+            
+            if (currentWifiStatus == WL_CONNECTED) {
+                char ipStr[20];
+                snprintf(ipStr, sizeof(ipStr), "IP:%s", WiFi.localIP().toString().c_str());
+                lcdDisplay.showInfo(ipStr);
+            } else {
+                lcdDisplay.showConnectingMessage();
+            }
+            
+            Wire1.beginTransmission(0x70);
+            Wire1.write(0x00);
+            Wire1.endTransmission();
+        }
+    }
     
     // Update network first
     networkManager.update();

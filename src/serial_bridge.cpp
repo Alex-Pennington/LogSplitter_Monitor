@@ -59,31 +59,34 @@ void SerialBridge::checkAndResetWindow() {
 void SerialBridge::setNetworkManager(NetworkManager* network) {
     networkManager = network;
     
-    // Note: Protobuf decoder is available but not used for pass-through mode
-    // protobufDecoder.begin(network);
-    logBridgeActivity(LOG_INFO, "Network manager configured for binary pass-through");
+    // Initialize protobuf decoder for individual topic publishing
+    protobufDecoder.begin(network);
+    logBridgeActivity(LOG_INFO, "Network manager and protobuf decoder configured");
 }
 
 void SerialBridge::update() {
     if (!bridgeConnected) return;
     
     // Read available data from Serial1 (size-prefixed binary protobuf data)
+    // Per TELEMETRY_API.md: SIZE byte = header + payload length (NOT including size byte itself)
+    // Total message on wire = 1 (size byte) + SIZE value
     while (Serial1.available()) {
         uint8_t byte = Serial1.read();
         
         // State machine for size-prefixed message parsing
         if (bufferIndex == 0) {
-            // First byte is the message size (including header + payload)
+            // First byte is the message size (header + payload, NOT including size byte)
             expectedMessageSize = byte;
             
-            // Validate size is within reasonable bounds (7-33 bytes as per API)
-            if (expectedMessageSize < PROTOBUF_MIN_MESSAGE_SIZE || expectedMessageSize > PROTOBUF_MAX_MESSAGE_SIZE) {
+            // Validate size is within reasonable bounds (6-32 bytes for header+payload)
+            // Per API: min 6 bytes (header only), max 32 bytes (header + max payload)
+            if (expectedMessageSize < 6 || expectedMessageSize > 32) {
                 parseErrors++;
                 logBridgeActivity(LOG_WARNING, "Invalid message size: %d bytes", expectedMessageSize);
                 continue; // Skip this byte and try next
             }
             
-            // Store the size byte
+            // Store the size byte at index 0
             messageBuffer[bufferIndex++] = byte;
         }
         else {
@@ -92,7 +95,8 @@ void SerialBridge::update() {
                 messageBuffer[bufferIndex++] = byte;
                 
                 // Check if we have received the complete message
-                if (bufferIndex >= expectedMessageSize) {
+                // bufferIndex includes size byte, so complete when bufferIndex = 1 + expectedMessageSize
+                if (bufferIndex >= (size_t)(expectedMessageSize + 1)) {
                     // Process the complete protobuf message (including size byte)
                     processProtobufMessage(reinterpret_cast<uint8_t*>(messageBuffer), bufferIndex);
                     
@@ -168,12 +172,9 @@ void SerialBridge::processProtobufMessage(uint8_t* data, size_t length) {
             logBridgeActivity(LOG_WARNING, "Failed to forward raw protobuf message to MQTT");
         }
         
-        // Optional: Decode protobuf for individual topics (if needed)
-        // For now, just pass through the binary data as requested
+        // Decode protobuf and publish to individual topics
         if (length >= 7) { // Minimum valid message size (1 size + 6 header)
-            uint8_t msgSize = data[0];
-            uint8_t msgType = data[1];
-            logBridgeActivity(LOG_DEBUG, "Message type: 0x%02X, size: %d", msgType, msgSize);
+            protobufDecoder.decodeAndPublish(data, length);
         }
     } else {
         messagesDropped++;

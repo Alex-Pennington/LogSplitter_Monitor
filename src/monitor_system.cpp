@@ -167,13 +167,12 @@ void MonitorSystem::update() {
     checkI2CHealth();
     
     // Round-robin I2C sensor reading: read one sensor every 10 seconds
-    // LCD updates 5 seconds after each sensor read
+    // LCD updates every 5 seconds (more frequent for better responsiveness)
     const unsigned long SENSOR_READ_INTERVAL = 10000;  // 10 seconds between sensor reads
-    const unsigned long LCD_UPDATE_DELAY = 5000;       // LCD updates 5 seconds after sensor read
+    const unsigned long LCD_UPDATE_INTERVAL = 5000;    // LCD updates every 5 seconds
     static uint8_t currentSensor = 0;  // 0=temp, 1=weight, 2=power, 3=adc
     static unsigned long lastSensorReadTime = 0;
-    static unsigned long nextLCDUpdate = 0;
-    static bool lcdUpdatePending = false;
+    static unsigned long lastLCDUpdateTime = 0;
     static bool firstRun = true;
     
     // On first run, read first sensor immediately
@@ -200,20 +199,16 @@ void MonitorSystem::update() {
                 break;
         }
         
-        // Schedule LCD update for 5 seconds from now
-        nextLCDUpdate = now + LCD_UPDATE_DELAY;
-        lcdUpdatePending = true;
-        
         // Move to next sensor in rotation
         currentSensor = (currentSensor + 1) % 4;
         lastSensorReadTime = now;
     }
     
-    // Update LCD 5 seconds after sensor read
-    if (lcdUpdatePending && now >= nextLCDUpdate) {
-        LOG_INFO("Updating LCD display (5s after sensor read)");
+    // Update LCD every 5 seconds (independent of sensor reads)
+    if (now - lastLCDUpdateTime >= LCD_UPDATE_INTERVAL) {
+        LOG_INFO("Updating LCD display");
         updateLCDDisplay();
-        lcdUpdatePending = false;
+        lastLCDUpdateTime = now;
     }
     
     // Publish status periodically
@@ -935,10 +930,22 @@ bool MonitorSystem::loadWeightCalibration() {
 
 void MonitorSystem::updateLCDDisplay() {
     // Only update LCD if it's available
-    if (!g_lcdDisplay) return;
+    if (!g_lcdDisplay) {
+        debugPrintf("LCD: g_lcdDisplay is NULL\n");
+        return;
+    }
+    
+    if (!g_lcdDisplay->isAvailable()) {
+        debugPrintf("LCD: Display not available/initialized\n");
+        return;
+    }
     
     // Select LCD multiplexer channel
-    i2cMux.selectChannel(LCD_CHANNEL);
+    if (!i2cMux.selectChannel(LCD_CHANNEL)) {
+        debugPrintf("LCD: Failed to select mux channel %d\n", LCD_CHANNEL);
+        return;
+    }
+    delay(5);  // Small delay for channel to stabilize
     
     // Get network status for combined display
     bool wifiConnected = false;

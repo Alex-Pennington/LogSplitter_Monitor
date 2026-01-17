@@ -80,9 +80,22 @@ public:
     // Core decoding method - called by SerialBridge
     bool decodeProtobufMessage(uint8_t* data, size_t length);
     
+    // Decode and publish to individual MQTT topics
+    bool decodeAndPublish(uint8_t* data, size_t length);
+    
     // Individual message type decoders
     bool decodeTelemetryMessage(uint8_t* data, size_t length);
     bool decodeCommandResponse(uint8_t* data, size_t length);
+    
+    // Binary message decoders (0x10-0x17)
+    bool decodeDigitalInput(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeDigitalOutput(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeRelayEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodePressure(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeSystemError(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeSafetyEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeSystemStatus(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
+    bool decodeSequenceEvent(uint8_t* payload, size_t length, uint8_t sequence, uint32_t timestamp);
     
     // Statistics and diagnostics
     void getStatistics(char* buffer, size_t bufferSize);

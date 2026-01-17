@@ -22,10 +22,10 @@ import json
 from typing import Optional, Dict, Any
 
 # MQTT Configuration
-MQTT_BROKER = "your-mqtt-broker.com"  # Update with your broker
+MQTT_BROKER = "129.212.148.141"
 MQTT_PORT = 1883
-MQTT_USER = "your-username"           # Update with your credentials
-MQTT_PASS = "your-password"
+MQTT_USER = "lsmonitor"
+MQTT_PASS = "thisisasecret"
 MQTT_TOPIC = "controller/protobuff"
 
 class LogSplitterProtobufDecoder:
@@ -54,16 +54,17 @@ class LogSplitterProtobufDecoder:
         try:
             self.messages_received += 1
             
-            if len(binary_data) < 7:  # Minimum message size
+            if len(binary_data) < 7:  # Minimum message size (1 size byte + 6 header)
                 self.decode_errors += 1
                 print(f"ERROR: Message too short: {len(binary_data)} bytes")
                 return None
             
             # Parse header
+            # Per TELEMETRY_API.md: SIZE byte = header + payload length (NOT including size byte itself)
             size_byte = binary_data[0]
-            if size_byte != len(binary_data):
+            if (size_byte + 1) != len(binary_data):
                 self.decode_errors += 1
-                print(f"ERROR: Size mismatch: expected {size_byte}, got {len(binary_data)}")
+                print(f"ERROR: Size mismatch: SIZE byte={size_byte}, expected total={size_byte + 1}, got {len(binary_data)}")
                 return None
             
             msg_type = binary_data[1]
